@@ -2,7 +2,7 @@ describe('Specs List', function () {
   beforeEach(function () {
     cy.fixture('user').as('user')
     cy.fixture('config').as('config')
-    cy.fixture('specs').as('specs')
+    cy.fixture('specs_with_components').as('specs')
     cy.fixture('specs_windows').as('specsWindows')
 
     cy.visitIndex().then(function (win) {
@@ -11,7 +11,9 @@ describe('Specs List', function () {
       this.win = win
       this.ipc = win.App.ipc
 
-      this.numSpecs = this.specs.integration.length + this.specs.unit.length
+      expect(this.specs.integration.length, 'has integration tests').to.be.gt(0)
+      expect(this.specs.component.length, 'has component tests').to.be.gt(0)
+      this.numSpecs = this.specs.integration.length + this.specs.component.length
 
       cy.stub(this.ipc, 'getOptions').resolves({ projectRoot: '/foo/bar' })
       cy.stub(this.ipc, 'getCurrentUser').resolves(this.user)
@@ -42,6 +44,7 @@ describe('Specs List', function () {
 
     it('displays empty message', () => {
       cy.contains('No files found')
+      cy.percySnapshot()
     })
 
     it('displays integration test folder path', function () {
@@ -99,65 +102,92 @@ describe('Specs List', function () {
       this.openProject.resolve(this.config)
     })
 
-    it('displays modal', () => {
-      cy.contains('.modal', 'To help you get started').should('be.visible')
-    })
+    context('modal', () => {
+      it('displays', () => {
+        cy.contains('.modal', 'To help you get started').should('be.visible')
+        cy.percySnapshot()
+      })
 
-    it('displays the scaffolded files', () => {
-      cy.get('.folder-preview-onboarding').within(function () {
-        cy.contains('span', 'fixtures').siblings('ul').within(function () {})
-        cy.contains('example.json')
-        cy.contains('span', 'integration').siblings('ul').within(() => {
-          cy.contains('examples')
+      it('displays the scaffolded files', () => {
+        cy.get('.folder-preview-onboarding').within(function () {
+          cy.contains('span', 'fixtures').siblings('ul').within(function () {
+          })
+
+          cy.contains('example.json')
+          cy.contains('span', 'integration').siblings('ul').within(() => {
+            cy.contains('examples')
+          })
+
+          cy.contains('span', 'support').siblings('ul').within(function () {
+            cy.contains('commands.js')
+            cy.contains('defaults.js')
+
+            cy.contains('index.js')
+          })
+
+          cy.contains('span', 'plugins').siblings('ul').within(() => {
+            cy.contains('index.js')
+          })
         })
+      })
 
-        cy.contains('span', 'support').siblings('ul').within(function () {
-          cy.contains('commands.js')
-          cy.contains('defaults.js')
-
-          cy.contains('index.js')
-        })
-
-        cy.contains('span', 'plugins').siblings('ul').within(() => {
-          cy.contains('index.js')
+      it('lists folders and files alphabetically', () => {
+        cy.get('.folder-preview-onboarding').within(() => {
+          cy.contains('fixtures').parent().next()
+          .contains('integration')
         })
       })
-    })
 
-    it('lists folders and files alphabetically', () => {
-      cy.get('.folder-preview-onboarding').within(() => {
-        cy.contains('fixtures').parent().next()
-        .contains('integration')
+      it('truncates file lists with more than 3 items', () => {
+        cy.get('.folder-preview-onboarding').within(function () {
+          cy.contains('examples').closest('.new-item').find('li')
+          .should('have.length', 3)
+
+          cy.get('.is-more').should('have.text', ' ... 17 more files ...')
+        })
+      })
+
+      it('can dismiss the modal', function () {
+        cy.contains('OK, got it!').click()
+
+        cy.get('.modal').should('not.be.visible')
+        .then(function () {
+          expect(this.ipc.onboardingClosed).to.be.called
+        })
+      })
+
+      it('triggers open:finder on click of example folder', function () {
+        cy.get('.modal').contains('examples').click().then(() => {
+          expect(this.ipc.openFinder).to.be.calledWith(this.config.integrationExamplePath)
+        })
+      })
+
+      it('triggers open:finder on click of text folder', function () {
+        cy.get('.modal').contains('cypress/integration').click().then(() => {
+          expect(this.ipc.openFinder).to.be.calledWith(this.config.integrationFolder)
+        })
       })
     })
 
-    it('truncates file lists with more than 3 items', () => {
-      cy.get('.folder-preview-onboarding').within(function () {
-        cy.contains('examples').closest('.new-item').find('li')
-        .should('have.length', 3)
-
-        cy.get('.is-more').should('have.text', ' ... 17 more files ...')
+    context('banner', function () {
+      beforeEach(function () {
+        cy.contains('.modal', 'OK, got it!').click()
       })
-    })
 
-    it('can dismiss the modal', function () {
-      cy.contains('OK, got it!').click()
-
-      cy.get('.modal').should('not.be.visible')
-      .then(function () {
-        expect(this.ipc.onboardingClosed).to.be.called
+      it('displays', function () {
+        cy.get('.first-test-banner')
+        cy.percySnapshot()
       })
-    })
 
-    it('triggers open:finder on click of example folder', function () {
-      cy.get('.modal').contains('examples').click().then(() => {
-        expect(this.ipc.openFinder).to.be.calledWith(this.config.integrationExamplePath)
+      it('is dismissable', function () {
+        cy.get('.first-test-banner').find('.close').click()
+        cy.get('.first-test-banner').should('not.exist')
       })
-    })
 
-    it('triggers open:finder on click of text folder', function () {
-      cy.get('.modal').contains('cypress/integration').click().then(() => {
-        expect(this.ipc.openFinder).to.be.calledWith(this.config.integrationFolder)
+      it('opens link to docs on click of help link', function () {
+        cy.contains('a', 'How to write tests').click().then(function () {
+          expect(this.ipc.externalOpen).to.be.calledWith('https://on.cypress.io/writing-first-test')
+        })
       })
     })
   })
@@ -190,35 +220,42 @@ describe('Specs List', function () {
       })
 
       context('run all specs', function () {
+        const runAllIntegrationSpecsLabel = 'Run 5 integration specs'
+
         it('displays run all specs button', () => {
-          cy.contains('.all-tests', 'Run all specs').should('have.attr', 'title')
+          cy.contains('.all-tests', runAllIntegrationSpecsLabel)
+          .should('have.attr', 'title', 'Run integration specs together')
         })
 
         it('has play icon', () => {
-          cy.contains('.all-tests', 'Run all specs')
+          cy.contains('.all-tests', runAllIntegrationSpecsLabel)
           .find('i').should('have.class', 'fa-play')
         })
 
         it('triggers browser launch on click of button', () => {
-          cy.contains('.all-tests', 'Run all specs').click()
+          cy.contains('.all-tests', runAllIntegrationSpecsLabel).click()
+          .find('.fa-dot-circle')
           .then(function () {
             const launchArgs = this.ipc.launchBrowser.lastCall.args
 
-            expect(launchArgs[0].browser.name).to.eq('chrome')
+            expect(launchArgs[0].browser.name, 'browser name').to.eq('chrome')
 
-            expect(launchArgs[0].spec.name).to.eq('All Specs')
+            expect(launchArgs[0].spec.name, 'spec name').to.eq('All Integration Specs')
+
+            expect(launchArgs[0].specFilter, 'spec filter').to.eq(null)
           })
         })
 
         describe('all specs running in browser', function () {
           beforeEach(() => {
-            cy.contains('.all-tests', 'Run all specs').as('allSpecs').click()
+            cy.contains('.all-tests', runAllIntegrationSpecsLabel).as('allSpecs').click()
           })
 
           it('updates spec icon', function () {
             cy.get('@allSpecs').find('i').should('have.class', 'fa-dot-circle')
 
             cy.get('@allSpecs').find('i').should('not.have.class', 'fa-play')
+            cy.percySnapshot()
           })
 
           it('sets spec as active', () => {
@@ -228,9 +265,10 @@ describe('Specs List', function () {
       })
 
       context('displays list of specs', function () {
-        it('lists main folders of specs', function () {
+        it('lists main folders of specs', () => {
+          cy.get('.folder.level-0').should('have.length', 2)
           cy.contains('.folder.level-0', 'integration')
-          cy.contains('.folder.level-0', 'unit')
+          cy.contains('.folder.level-0', 'component')
         })
 
         it('lists nested folders', () => {
@@ -241,9 +279,20 @@ describe('Specs List', function () {
           cy.get('.folder.level-0 .file.level-1 a').contains('app_spec.coffee')
         })
 
-        it('lists folder with \'.\'', function () {
+        it('lists folder with "."', function () {
           cy.get('.file').should('have.length', this.numSpecs)
           cy.get('.folder').should('have.length', 10)
+        })
+
+        it('lists files after folders when in same directory', () => {
+          // 📁 bar
+          // 📁 foo
+          // app
+          cy.get('.list-as-table.integration')
+          .find('li').first().should('contain', 'accounts')
+
+          cy.get('.list-as-table.integration')
+          .find('li').last().should('contain', 'app_spec')
         })
       })
 
@@ -278,10 +327,10 @@ describe('Specs List', function () {
           cy.get('.file').should('have.length', this.numSpecs)
 
           cy.get(lastExpandedFolderSelector).click()
-          cy.get('.file').should('have.length', 6)
+          cy.get('.file').should('have.length', 7)
 
           cy.get(lastExpandedFolderSelector).click()
-          cy.get('.file').should('have.length', 6)
+          cy.get('.file').should('have.length', 7)
 
           cy.get(lastExpandedFolderSelector).click()
           cy.get('.file').should('have.length', 5)
@@ -305,7 +354,6 @@ describe('Specs List', function () {
           cy.get('.file').should('have.length', 1)
 
           cy.get(lastExpandedFolderSelector).click()
-
           cy.get('.file').should('have.length', 0)
         })
       })
@@ -402,17 +450,29 @@ describe('Specs List', function () {
       })
 
       describe('typing the filter', function () {
+        const runAllIntegrationSpecsLabel = 'Run 5 integration specs'
+
         beforeEach(function () {
           this.ipc.getSpecs.yields(null, this.specs)
           this.openProject.resolve(this.config)
 
+          cy.contains('.all-tests', runAllIntegrationSpecsLabel)
           cy.get('.filter').type('new')
         })
 
-        it('displays only matching spec', () => {
+        it('displays only matching spec', function () {
           cy.get('.specs-list .file')
           .should('have.length', 1)
           .and('contain', 'account_new_spec.coffee')
+
+          cy.contains('.all-tests', 'Run 1 integration spec').click()
+          .find('.fa-dot-circle')
+          .then(() => {
+            expect(this.ipc.launchBrowser).to.have.property('called').equal(true)
+            const launchArgs = this.ipc.launchBrowser.lastCall.args
+
+            expect(launchArgs[0].specFilter, 'spec filter').to.eq('new')
+          })
         })
 
         it('only shows matching folders', () => {
@@ -427,6 +487,8 @@ describe('Specs List', function () {
 
           cy.get('.specs-list .file')
           .should('have.length', this.numSpecs)
+
+          cy.contains('.all-tests', runAllIntegrationSpecsLabel)
         })
 
         it('clears the filter if the user press ESC key', function () {
@@ -435,6 +497,9 @@ describe('Specs List', function () {
 
           cy.get('.specs-list .file')
           .should('have.length', this.numSpecs)
+
+          cy.contains('.all-tests', runAllIntegrationSpecsLabel)
+          .find('.fa-play')
         })
 
         it('shows empty message if no results', function () {
@@ -442,6 +507,14 @@ describe('Specs List', function () {
           cy.get('.specs-list').should('not.exist')
 
           cy.get('.empty-well').should('contain', 'No specs match your search: "foobarbaz"')
+          cy.percySnapshot()
+        })
+
+        it('removes run all tests buttons if no results', function () {
+          cy.get('.filter').clear().type('foobarbaz')
+
+          // the "Run ... tests" buttons should be gone
+          cy.get('.all-tests').should('not.exist')
         })
 
         it('clears and focuses the filter field when clear search is clicked', function () {
@@ -460,6 +533,29 @@ describe('Specs List', function () {
             expect(JSON.parse(win.localStorage[`specsFilter-${this.config.projectId}-/foo/bar`])).to.equal('new')
           })
         })
+
+        it('does not update run button label while running', function () {
+          cy.contains('.all-tests', 'Run 1 integration spec').click()
+          // mock opened browser and running tests
+          // to force "Stop" button to show up
+          cy.window().its('__project').then((project) => {
+            project.browserOpened()
+          })
+
+          // the button has its its label reflect the running specs
+          cy.contains('.all-tests', 'Running integration tests')
+          .should('have.class', 'active')
+
+          // the button has its label unchanged while the specs are running
+          cy.get('.filter').clear()
+          cy.contains('.all-tests', 'Running integration tests')
+          .should('have.class', 'active')
+
+          // but once the project stops running tests, the button gets updated
+          cy.get('.close-browser').click()
+          cy.contains('.all-tests', 'Run 5 integration specs')
+          .should('not.have.class', 'active')
+        })
       })
 
       describe('when there\'s a saved filter', function () {
@@ -475,6 +571,7 @@ describe('Specs List', function () {
           this.openProject.resolve(this.config)
 
           cy.get('.filter').should('have.value', 'app')
+          cy.contains('.all-tests', 'Run 1 integration spec')
         })
 
         it('does not apply it for a different project', function () {
@@ -525,7 +622,7 @@ describe('Specs List', function () {
         cy.get('@firstSpec')
         .click()
         .then(function () {
-          expect(this.ipc.closeBrowser).to.be.called
+          expect(this.ipc.closeBrowser).to.have.property('called', true)
 
           const launchArgs = this.ipc.launchBrowser.lastCall.args
 
@@ -542,6 +639,12 @@ describe('Specs List', function () {
         cy.get('@firstSpec').click()
         .parent()
         .should('have.class', 'active')
+      })
+
+      it('shows the running spec label', () => {
+        cy.get('@firstSpec').click()
+        cy.contains('.all-tests', 'Running 1 spec')
+        .find('.fa-dot-circle')
       })
 
       it('maintains active selection if specs change', function () {
@@ -612,6 +715,82 @@ describe('Specs List', function () {
         cy.get('@secondSpec').parent().should('have.class', 'active')
       })
     })
+
+    context('with component tests', function () {
+      beforeEach(function () {
+        this.ipc.getSpecs.yields(null, this.specs)
+        this.openProject.resolve(this.config)
+      })
+
+      it('shows separate run specs buttons', function () {
+        cy.get('.all-tests').should('have.length', 2)
+        cy.contains('.folder-name', 'integration tests')
+        .contains('.all-tests', 'Run 5 integration specs')
+
+        cy.contains('.folder-name', 'component tests')
+        .contains('.all-tests', 'Run 8 component specs')
+      })
+
+      it('runs all component tests together', function () {
+        cy.contains('.all-tests', 'Run 8 component specs').click()
+        // all other "Run .." buttons should disappear
+        cy.get('.all-tests').should('have.length', 1)
+        // and the label changes
+        cy.contains('.folder-name', 'component tests')
+        .contains('.all-tests', 'Running component tests').should('be.visible')
+        .and('have.class', 'active')
+      })
+
+      it('runs single component spec', function () {
+        cy.contains('bar_list_spec.coffee').click()
+        .parent()
+        .should('have.class', 'active')
+
+        // all other "Run .." buttons should disappear
+        cy.get('.all-tests').should('have.length', 1)
+        // and the label changes
+        cy.contains('.folder-name', 'component tests')
+        .contains('.all-tests', 'Running 1 spec').should('be.visible')
+        // the button does not get the class active, it stays with the file
+        .and('not.have.class', 'active')
+      })
+
+      it('filters all spec types using filter', function () {
+        cy.get('.filter').type('fo')
+        cy.contains('.all-tests', 'Run 1 integration spec')
+        cy.contains('.all-tests', 'Run 1 component spec')
+
+        cy.log('**clearing the search**')
+        cy.get('.filter').clear()
+        cy.contains('.all-tests', 'Run 5 integration specs')
+        cy.contains('.all-tests', 'Run 8 component specs')
+      })
+    })
+
+    context('returning to specs tab', function () {
+      beforeEach(function () {
+        this.ipc.getSpecs.yields(null, this.specs)
+        this.openProject.resolve(this.config)
+      })
+
+      // https://github.com/cypress-io/cypress/issues/9151
+      it('does not crash when running', function () {
+        cy.contains('.file-name', 'app_spec.coffee').click()
+        .then(function () {
+          this.ipc.onSpecChanged.yield(null, 'integration/app_spec.coffee')
+        })
+
+        cy.contains('.all-tests', 'Running 1 spec')
+
+        cy.contains('.project-nav a', 'Settings').click()
+        cy.get('.settings').should('be.visible')
+        cy.contains('.project-nav a', 'Tests').click()
+
+        // the specs list renders again
+        cy.contains('.file-name', 'app_spec.coffee')
+        cy.contains('.all-tests', 'Running 1 spec')
+      })
+    })
   })
 
   describe('spec list updates', function () {
@@ -656,7 +835,22 @@ describe('Specs List', function () {
     })
 
     it('displays when spec is hovered over', function () {
-      cy.get('@button').invoke('show').should('be.visible')
+      cy.get('@spec').realHover()
+      cy.get('@button').should('be.visible')
+
+      // invoke show for snapshot since hover doesn't do it
+      cy.get('@button').invoke('show')
+      cy.percySnapshot()
+    })
+
+    it('displays when spec is active and hovered over', function () {
+      cy.get('@spec').click().should('have.class', 'active')
+
+      cy.get('@spec').realHover()
+      cy.get('@button').should('be.visible')
+
+      cy.get('@button').invoke('show')
+      cy.percySnapshot()
     })
 
     describe('opens files', function () {
@@ -670,7 +864,7 @@ describe('Specs List', function () {
           { id: 'other', name: 'Other', isOther: true, openerId: '' },
         ]
 
-        cy.get('@button').invoke('show')
+        cy.get('@spec').realHover()
       })
 
       context('when user has not already set opener and opens file', function () {
@@ -682,7 +876,8 @@ describe('Specs List', function () {
         })
 
         it('opens in preferred opener', function () {
-          cy.get('@button').click().then(() => {
+          cy.get('@button').click()
+          .then(() => {
             expect(this.ipc.openFile).to.be.calledWith({
               where: this.availableEditors[4],
               file: '/user/project/cypress/integration/app_spec.coffee',
@@ -708,11 +903,12 @@ describe('Specs List', function () {
           })
 
           cy.contains('Set preference and open file')
+          cy.percySnapshot()
         })
 
         it('closes modal when cancel is clicked', function () {
           cy.contains('Cancel').click()
-          cy.contains('Set preference and open file').should('not.be.visible')
+          cy.contains('Set preference and open file').should('not.exist')
         })
 
         describe('when editor is not selected', function () {
@@ -760,7 +956,7 @@ describe('Specs List', function () {
           })
 
           it('closes modal', function () {
-            cy.contains('Set preference and open file').should('not.be.visible')
+            cy.contains('Set preference and open file').should('not.exist')
           })
 
           it('sets user editor', function () {

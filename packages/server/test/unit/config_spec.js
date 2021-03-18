@@ -56,8 +56,7 @@ describe('lib/config', () => {
 
       this.setup = (cypressJson = {}, cypressEnvJson = {}) => {
         sinon.stub(settings, 'read').withArgs(this.projectRoot).resolves(cypressJson)
-
-        return sinon.stub(settings, 'readEnv').withArgs(this.projectRoot).resolves(cypressEnvJson)
+        sinon.stub(settings, 'readEnv').withArgs(this.projectRoot).resolves(cypressEnvJson)
       }
     })
 
@@ -78,6 +77,19 @@ describe('lib/config', () => {
       return config.get(this.projectRoot)
       .then((obj) => {
         expect(obj.projectName).to.eq('project')
+      })
+    })
+
+    it('clones settings and env settings, so they are not mutated', function () {
+      const settings = { foo: 'bar' }
+      const envSettings = { baz: 'qux' }
+
+      this.setup(settings, envSettings)
+
+      return config.get(this.projectRoot)
+      .then(() => {
+        expect(settings).to.deep.equal({ foo: 'bar' })
+        expect(envSettings).to.deep.equal({ baz: 'qux' })
       })
     })
 
@@ -352,6 +364,20 @@ describe('lib/config', () => {
         })
       })
 
+      context('downloadsFolder', () => {
+        it('passes if a string', function () {
+          this.setup({ downloadsFolder: '_downloads' })
+
+          return this.expectValidationPasses()
+        })
+
+        it('fails if not a string', function () {
+          this.setup({ downloadsFolder: true })
+
+          return this.expectValidationFails('be a string')
+        })
+      })
+
       context('userAgent', () => {
         it('passes if a string', function () {
           this.setup({ userAgent: '_tests' })
@@ -593,6 +619,20 @@ describe('lib/config', () => {
         })
       })
 
+      context('screenshotOnRunFailure', () => {
+        it('passes if a boolean', function () {
+          this.setup({ screenshotOnRunFailure: false })
+
+          return this.expectValidationPasses()
+        })
+
+        it('fails if not a boolean', function () {
+          this.setup({ screenshotOnRunFailure: 42 })
+
+          return this.expectValidationFails('be a boolean')
+        })
+      })
+
       context('viewportHeight', () => {
         it('passes if a number', function () {
           this.setup({ viewportHeight: 10 })
@@ -635,6 +675,56 @@ describe('lib/config', () => {
         })
       })
 
+      context('scrollBehavior', () => {
+        it('passes if false', function () {
+          this.setup({ scrollBehavior: false })
+
+          return this.expectValidationPasses()
+        })
+
+        it('passes if an enum (center)', function () {
+          this.setup({ scrollBehavior: 'center' })
+
+          return this.expectValidationPasses()
+        })
+
+        it('passes if an enum (top)', function () {
+          this.setup({ scrollBehavior: 'top' })
+
+          return this.expectValidationPasses()
+        })
+
+        it('passes if an enum (bottom)', function () {
+          this.setup({ scrollBehavior: 'bottom' })
+
+          return this.expectValidationPasses()
+        })
+
+        it('passes if an enum (nearest)', function () {
+          this.setup({ scrollBehavior: 'nearest' })
+
+          return this.expectValidationPasses()
+        })
+
+        it('fails if not valid (number)', function () {
+          this.setup({ scrollBehavior: 42 })
+
+          return this.expectValidationFails('be one of these values')
+        })
+
+        it('fails if not a valid (null)', function () {
+          this.setup({ scrollBehavior: null })
+
+          return this.expectValidationFails('be one of these values')
+        })
+
+        it('fails if not a valid (true)', function () {
+          this.setup({ scrollBehavior: true })
+
+          return this.expectValidationFails('be one of these values')
+        })
+      })
+
       context('watchForFileChanges', () => {
         it('passes if a boolean', function () {
           this.setup({ watchForFileChanges: false })
@@ -649,30 +739,58 @@ describe('lib/config', () => {
         })
       })
 
-      context('blacklistHosts', () => {
+      context('blockHosts', () => {
         it('passes if a string', function () {
-          this.setup({ blacklistHosts: 'google.com' })
+          this.setup({ blockHosts: 'google.com' })
 
           return this.expectValidationPasses()
         })
 
         it('passes if an array of strings', function () {
-          this.setup({ blacklistHosts: ['google.com'] })
+          this.setup({ blockHosts: ['google.com'] })
 
           return this.expectValidationPasses()
         })
 
         it('fails if not a string or array', function () {
-          this.setup({ blacklistHosts: 5 })
+          this.setup({ blockHosts: 5 })
 
           return this.expectValidationFails('be a string or an array of strings')
         })
 
         it('fails if not an array of strings', function () {
-          this.setup({ blacklistHosts: [5] })
+          this.setup({ blockHosts: [5] })
           this.expectValidationFails('be a string or an array of strings')
 
           return this.expectValidationFails('the value was: `[5]`')
+        })
+      })
+
+      context('retries', () => {
+        const retriesError = 'a positive number or null or an object with keys "openMode" and "runMode" with values of numbers or nulls'
+
+        // need to keep the const here or it'll get stripped by the build
+        // eslint-disable-next-line no-unused-vars
+        const cases = [
+          [{ retries: null }, 'with null', true],
+          [{ retries: 3 }, 'when a number', true],
+          [{ retries: 3.2 }, 'when a float', false],
+          [{ retries: -1 }, 'with a negative number', false],
+          [{ retries: true }, 'when true', false],
+          [{ retries: false }, 'when false', false],
+          [{ retries: {} }, 'with an empty object', true],
+          [{ retries: { runMode: 3 } }, 'when runMode is a positive number', true],
+          [{ retries: { runMode: -1 } }, 'when runMode is a negative number', false],
+          [{ retries: { openMode: 3 } }, 'when openMode is a positive number', true],
+          [{ retries: { openMode: -1 } }, 'when openMode is a negative number', false],
+          [{ retries: { openMode: 3, TypoRunMode: 3 } }, 'when there is an additional unknown key', false],
+          [{ retries: { openMode: 3, runMode: 3 } }, 'when both runMode and openMode are positive numbers', true],
+        ].forEach(([config, expectation, shouldPass]) => {
+          it(`${shouldPass ? 'passes' : 'fails'} ${expectation}`, function () {
+            this.setup(config)
+
+            return shouldPass ? this.expectValidationPasses() : this.expectValidationFails(retriesError)
+          })
         })
       })
 
@@ -717,8 +835,8 @@ describe('lib/config', () => {
       }
     })
 
-    it('includes blacklistHosts', function () {
-      return this.includes('blacklistHosts')
+    it('includes blockHosts', function () {
+      return this.includes('blockHosts')
     })
   })
 
@@ -905,6 +1023,10 @@ describe('lib/config', () => {
       return this.defaults('waitForAnimations', true)
     })
 
+    it('scrollBehavior=start', function () {
+      return this.defaults('scrollBehavior', 'top')
+    })
+
     it('animationDistanceThreshold=5', function () {
       return this.defaults('animationDistanceThreshold', 5)
     })
@@ -957,19 +1079,19 @@ describe('lib/config', () => {
       return this.defaults('supportFile', false, { supportFile: false })
     })
 
-    it('blacklistHosts=null', function () {
-      return this.defaults('blacklistHosts', null)
+    it('blockHosts=null', function () {
+      return this.defaults('blockHosts', null)
     })
 
-    it('blacklistHosts=[a,b]', function () {
-      return this.defaults('blacklistHosts', ['a', 'b'], {
-        blacklistHosts: ['a', 'b'],
+    it('blockHosts=[a,b]', function () {
+      return this.defaults('blockHosts', ['a', 'b'], {
+        blockHosts: ['a', 'b'],
       })
     })
 
-    it('blacklistHosts=a|b', function () {
-      return this.defaults('blacklistHosts', ['a', 'b'], {
-        blacklistHosts: ['a', 'b'],
+    it('blockHosts=a|b', function () {
+      return this.defaults('blockHosts', ['a', 'b'], {
+        blockHosts: ['a', 'b'],
       })
     })
 
@@ -1079,6 +1201,48 @@ describe('lib/config', () => {
       })
     })
 
+    // @see https://github.com/cypress-io/cypress/issues/6892
+    it('warns if experimentalGetCookiesSameSite is passed', async function () {
+      const warning = sinon.spy(errors, 'warning')
+
+      await this.defaults('experimentalGetCookiesSameSite', true, {
+        experimentalGetCookiesSameSite: true,
+      })
+
+      expect(warning).to.be.calledWith('EXPERIMENTAL_SAMESITE_REMOVED')
+    })
+
+    it('warns if experimentalShadowDomSupport is passed', async function () {
+      const warning = sinon.spy(errors, 'warning')
+
+      await this.defaults('experimentalShadowDomSupport', true, {
+        experimentalShadowDomSupport: true,
+      })
+
+      expect(warning).to.be.calledWith('EXPERIMENTAL_SHADOW_DOM_REMOVED')
+    })
+
+    it('warns if experimentalRunEvents is passed', async function () {
+      const warning = sinon.spy(errors, 'warning')
+
+      await this.defaults('experimentalRunEvents', true, {
+        experimentalRunEvents: true,
+      })
+
+      expect(warning).to.be.calledWith('EXPERIMENTAL_RUN_EVENTS_REMOVED')
+    })
+
+    // @see https://github.com/cypress-io/cypress/pull/9185
+    it('warns if experimentalNetworkStubbing is passed', async function () {
+      const warning = sinon.spy(errors, 'warning')
+
+      await this.defaults('experimentalNetworkStubbing', true, {
+        experimentalNetworkStubbing: true,
+      })
+
+      expect(warning).to.be.calledWith('EXPERIMENTAL_NETWORK_STUBBING_REMOVED')
+    })
+
     describe('.resolved', () => {
       it('sets reporter and port to cli', () => {
         const obj = {
@@ -1093,51 +1257,55 @@ describe('lib/config', () => {
         return config.mergeDefaults(obj, options)
         .then((cfg) => {
           expect(cfg.resolved).to.deep.eq({
-            env: { },
-            projectId: { value: null, from: 'default' },
-            port: { value: 1234, from: 'cli' },
-            hosts: { value: null, from: 'default' },
-            blacklistHosts: { value: null, from: 'default' },
-            browsers: { value: [], from: 'default' },
-            userAgent: { value: null, from: 'default' },
-            reporter: { value: 'json', from: 'cli' },
-            reporterOptions: { value: null, from: 'default' },
-            baseUrl: { value: null, from: 'default' },
-            defaultCommandTimeout: { value: 4000, from: 'default' },
-            pageLoadTimeout: { value: 60000, from: 'default' },
-            requestTimeout: { value: 5000, from: 'default' },
-            responseTimeout: { value: 30000, from: 'default' },
-            execTimeout: { value: 60000, from: 'default' },
-            experimentalGetCookiesSameSite: { value: false, from: 'default' },
-            experimentalSourceRewriting: { value: false, from: 'default' },
-            taskTimeout: { value: 60000, from: 'default' },
-            numTestsKeptInMemory: { value: 50, from: 'default' },
-            waitForAnimations: { value: true, from: 'default' },
             animationDistanceThreshold: { value: 5, from: 'default' },
-            trashAssetsBeforeRuns: { value: true, from: 'default' },
-            watchForFileChanges: { value: true, from: 'default' },
-            modifyObstructiveCode: { value: true, from: 'default' },
+            baseUrl: { value: null, from: 'default' },
+            blockHosts: { value: null, from: 'default' },
+            browsers: { value: [], from: 'default' },
             chromeWebSecurity: { value: true, from: 'default' },
-            viewportWidth: { value: 1000, from: 'default' },
-            viewportHeight: { value: 660, from: 'default' },
+            componentFolder: { value: 'cypress/component', from: 'default' },
+            defaultCommandTimeout: { value: 4000, from: 'default' },
+            downloadsFolder: { value: 'cypress/downloads', from: 'default' },
+            env: {},
+            execTimeout: { value: 60000, from: 'default' },
+            experimentalComponentTesting: { value: false, from: 'default' },
+            experimentalFetchPolyfill: { value: false, from: 'default' },
+            experimentalSourceRewriting: { value: false, from: 'default' },
+            experimentalStudio: { value: false, from: 'default' },
             fileServerFolder: { value: '', from: 'default' },
             firefoxGcInterval: { value: { openMode: null, runMode: 1 }, from: 'default' },
+            fixturesFolder: { value: 'cypress/fixtures', from: 'default' },
+            hosts: { value: null, from: 'default' },
+            ignoreTestFiles: { value: '*.hot-update.js', from: 'default' },
+            includeShadowDom: { value: false, from: 'default' },
+            integrationFolder: { value: 'cypress/integration', from: 'default' },
+            modifyObstructiveCode: { value: true, from: 'default' },
+            nodeVersion: { value: 'default', from: 'default' },
+            numTestsKeptInMemory: { value: 50, from: 'default' },
+            pageLoadTimeout: { value: 60000, from: 'default' },
+            pluginsFile: { value: 'cypress/plugins', from: 'default' },
+            port: { value: 1234, from: 'cli' },
+            projectId: { value: null, from: 'default' },
+            reporter: { value: 'json', from: 'cli' },
+            reporterOptions: { value: null, from: 'default' },
+            requestTimeout: { value: 5000, from: 'default' },
+            responseTimeout: { value: 30000, from: 'default' },
+            retries: { value: { runMode: 0, openMode: 0 }, from: 'default' },
+            screenshotOnRunFailure: { value: true, from: 'default' },
+            screenshotsFolder: { value: 'cypress/screenshots', from: 'default' },
+            supportFile: { value: 'cypress/support', from: 'default' },
+            taskTimeout: { value: 60000, from: 'default' },
+            testFiles: { value: '**/*.*', from: 'default' },
+            trashAssetsBeforeRuns: { value: true, from: 'default' },
+            userAgent: { value: null, from: 'default' },
             video: { value: true, from: 'default' },
             videoCompression: { value: 32, from: 'default' },
-            videoUploadOnPasses: { value: true, from: 'default' },
             videosFolder: { value: 'cypress/videos', from: 'default' },
-            supportFile: { value: 'cypress/support', from: 'default' },
-            pluginsFile: { value: 'cypress/plugins', from: 'default' },
-            fixturesFolder: { value: 'cypress/fixtures', from: 'default' },
-            ignoreTestFiles: { value: '*.hot-update.js', from: 'default' },
-            integrationFolder: { value: 'cypress/integration', from: 'default' },
-            screenshotsFolder: { value: 'cypress/screenshots', from: 'default' },
-            testFiles: { value: '**/*.*', from: 'default' },
-            nodeVersion: { value: 'default', from: 'default' },
-            experimentalComponentTesting: { value: false, from: 'default' },
-            componentFolder: { value: 'cypress/component', from: 'default' },
-            experimentalShadowDomSupport: { value: false, from: 'default' },
-            experimentalFetchPolyfill: { value: false, from: 'default' },
+            videoUploadOnPasses: { value: true, from: 'default' },
+            viewportHeight: { value: 660, from: 'default' },
+            viewportWidth: { value: 1000, from: 'default' },
+            waitForAnimations: { value: true, from: 'default' },
+            scrollBehavior: { value: 'top', from: 'default' },
+            watchForFileChanges: { value: true, from: 'default' },
           })
         })
       })
@@ -1146,7 +1314,6 @@ describe('lib/config', () => {
         sinon.stub(config, 'getProcessEnvVars').returns({
           quux: 'quux',
           RECORD_KEY: 'foobarbazquux',
-          CI_KEY: 'justanothercikey',
           PROJECT_ID: 'projectId123',
         })
 
@@ -1171,50 +1338,19 @@ describe('lib/config', () => {
         return config.mergeDefaults(obj, options)
         .then((cfg) => {
           expect(cfg.resolved).to.deep.eq({
-            projectId: { value: 'projectId123', from: 'env' },
-            port: { value: 2020, from: 'config' },
-            hosts: { value: null, from: 'default' },
-            blacklistHosts: { value: null, from: 'default' },
-            browsers: { value: [], from: 'default' },
-            userAgent: { value: null, from: 'default' },
-            reporter: { value: 'spec', from: 'default' },
-            reporterOptions: { value: null, from: 'default' },
-            baseUrl: { value: 'http://localhost:8080', from: 'config' },
-            defaultCommandTimeout: { value: 4000, from: 'default' },
-            pageLoadTimeout: { value: 60000, from: 'default' },
-            requestTimeout: { value: 5000, from: 'default' },
-            responseTimeout: { value: 30000, from: 'default' },
-            execTimeout: { value: 60000, from: 'default' },
-            experimentalGetCookiesSameSite: { value: false, from: 'default' },
-            experimentalSourceRewriting: { value: false, from: 'default' },
-            taskTimeout: { value: 60000, from: 'default' },
-            numTestsKeptInMemory: { value: 50, from: 'default' },
-            waitForAnimations: { value: true, from: 'default' },
             animationDistanceThreshold: { value: 5, from: 'default' },
-            trashAssetsBeforeRuns: { value: true, from: 'default' },
-            watchForFileChanges: { value: true, from: 'default' },
-            modifyObstructiveCode: { value: true, from: 'default' },
+            baseUrl: { value: 'http://localhost:8080', from: 'config' },
+            blockHosts: { value: null, from: 'default' },
+            browsers: { value: [], from: 'default' },
             chromeWebSecurity: { value: true, from: 'default' },
-            viewportWidth: { value: 1000, from: 'default' },
-            viewportHeight: { value: 660, from: 'default' },
-            fileServerFolder: { value: '', from: 'default' },
-            video: { value: true, from: 'default' },
-            videoCompression: { value: 32, from: 'default' },
-            videoUploadOnPasses: { value: true, from: 'default' },
-            videosFolder: { value: 'cypress/videos', from: 'default' },
-            supportFile: { value: 'cypress/support', from: 'default' },
-            pluginsFile: { value: 'cypress/plugins', from: 'default' },
-            firefoxGcInterval: { value: { openMode: null, runMode: 1 }, from: 'default' },
-            fixturesFolder: { value: 'cypress/fixtures', from: 'default' },
-            ignoreTestFiles: { value: '*.hot-update.js', from: 'default' },
-            integrationFolder: { value: 'cypress/integration', from: 'default' },
-            screenshotsFolder: { value: 'cypress/screenshots', from: 'default' },
-            testFiles: { value: '**/*.*', from: 'default' },
-            nodeVersion: { value: 'default', from: 'default' },
-            experimentalComponentTesting: { value: false, from: 'default' },
             componentFolder: { value: 'cypress/component', from: 'default' },
-            experimentalShadowDomSupport: { value: false, from: 'default' },
+            defaultCommandTimeout: { value: 4000, from: 'default' },
+            downloadsFolder: { value: 'cypress/downloads', from: 'default' },
+            execTimeout: { value: 60000, from: 'default' },
+            experimentalComponentTesting: { value: false, from: 'default' },
             experimentalFetchPolyfill: { value: false, from: 'default' },
+            experimentalSourceRewriting: { value: false, from: 'default' },
+            experimentalStudio: { value: false, from: 'default' },
             env: {
               foo: {
                 value: 'foo',
@@ -1236,11 +1372,42 @@ describe('lib/config', () => {
                 value: 'fooba...zquux',
                 from: 'env',
               },
-              CI_KEY: {
-                value: 'justa...cikey',
-                from: 'env',
-              },
             },
+            fileServerFolder: { value: '', from: 'default' },
+            firefoxGcInterval: { value: { openMode: null, runMode: 1 }, from: 'default' },
+            fixturesFolder: { value: 'cypress/fixtures', from: 'default' },
+            hosts: { value: null, from: 'default' },
+            ignoreTestFiles: { value: '*.hot-update.js', from: 'default' },
+            includeShadowDom: { value: false, from: 'default' },
+            integrationFolder: { value: 'cypress/integration', from: 'default' },
+            modifyObstructiveCode: { value: true, from: 'default' },
+            nodeVersion: { value: 'default', from: 'default' },
+            numTestsKeptInMemory: { value: 50, from: 'default' },
+            pageLoadTimeout: { value: 60000, from: 'default' },
+            pluginsFile: { value: 'cypress/plugins', from: 'default' },
+            port: { value: 2020, from: 'config' },
+            projectId: { value: 'projectId123', from: 'env' },
+            reporter: { value: 'spec', from: 'default' },
+            reporterOptions: { value: null, from: 'default' },
+            requestTimeout: { value: 5000, from: 'default' },
+            responseTimeout: { value: 30000, from: 'default' },
+            retries: { value: { runMode: 0, openMode: 0 }, from: 'default' },
+            screenshotOnRunFailure: { value: true, from: 'default' },
+            screenshotsFolder: { value: 'cypress/screenshots', from: 'default' },
+            supportFile: { value: 'cypress/support', from: 'default' },
+            taskTimeout: { value: 60000, from: 'default' },
+            testFiles: { value: '**/*.*', from: 'default' },
+            trashAssetsBeforeRuns: { value: true, from: 'default' },
+            userAgent: { value: null, from: 'default' },
+            video: { value: true, from: 'default' },
+            videoCompression: { value: 32, from: 'default' },
+            videosFolder: { value: 'cypress/videos', from: 'default' },
+            videoUploadOnPasses: { value: true, from: 'default' },
+            viewportHeight: { value: 660, from: 'default' },
+            viewportWidth: { value: 1000, from: 'default' },
+            waitForAnimations: { value: true, from: 'default' },
+            scrollBehavior: { value: 'top', from: 'default' },
+            watchForFileChanges: { value: true, from: 'default' },
           })
         })
       })
@@ -1831,7 +1998,7 @@ describe('lib/config', () => {
     })
 
     it('sets the pluginsFile to index.ts if it exists', () => {
-      const projectRoot = path.join(process.cwd(), 'test/support/fixtures/projects/ts-proj')
+      const projectRoot = path.join(process.cwd(), 'test/support/fixtures/projects/ts-proj-with-module-esnext')
 
       const obj = {
         projectRoot,
@@ -1848,7 +2015,7 @@ describe('lib/config', () => {
     })
 
     it('sets the pluginsFile to index.ts if it exists (without ts require hook)', () => {
-      const projectRoot = path.join(process.cwd(), 'test/support/fixtures/projects/ts-proj')
+      const projectRoot = path.join(process.cwd(), 'test/support/fixtures/projects/ts-proj-with-module-esnext')
       const pluginsFolder = `${projectRoot}/cypress/plugins`
       const pluginsFilename = `${pluginsFolder}/index.ts`
 

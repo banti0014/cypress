@@ -7,6 +7,7 @@ import eventManager from '../lib/event-manager'
 import visitFailure from './visit-failure'
 import blankContents from './blank-contents'
 import selectorPlaygroundModel from '../selector-playground/selector-playground-model'
+import studioRecorder from '../studio/studio-recorder'
 
 export default class AutIframe {
   constructor (config) {
@@ -71,8 +72,8 @@ export default class AutIframe {
 
     // remove the old body and replace with restored one
     this._body().remove()
-    this._insertBodyStyles(body, bodyStyles)
-    $html.append(body)
+    this._insertBodyStyles(body.get(), bodyStyles)
+    $html.append(body.get())
 
     this.debouncedToggleSelectorPlayground(selectorPlaygroundModel.isEnabled)
   }
@@ -167,14 +168,14 @@ export default class AutIframe {
     this.removeHighlights()
 
     if (body) {
-      $el = body.find(`[${highlightAttr}]`)
+      $el = body.get().find(`[${highlightAttr}]`)
     } else {
-      body = this._body()
+      body = { get: () => this._body() }
     }
 
     // normalize
     const el = $el.get(0)
-    const $body = body
+    const $body = body.get()
 
     body = $body.get(0)
 
@@ -394,6 +395,18 @@ export default class AutIframe {
       console.error('Failed to modify app dom:')
       console.error(err)
       /* eslint-disable no-console */
+    }
+  }
+
+  startStudio = () => {
+    if (studioRecorder.isLoading) {
+      studioRecorder.start(this._body()[0])
+    }
+  }
+
+  reattachStudio = () => {
+    if (studioRecorder.isActive) {
+      studioRecorder.attachListeners(this._body()[0])
     }
   }
 }

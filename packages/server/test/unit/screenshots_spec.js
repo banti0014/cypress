@@ -9,9 +9,9 @@ const sizeOf = require('image-size')
 const Fixtures = require('../support/helpers/fixtures')
 const config = require(`${root}lib/config`)
 const screenshots = require(`${root}lib/screenshots`)
-const fs = require(`${root}lib/util/fs`)
+const { fs } = require(`${root}lib/util/fs`)
 const plugins = require(`${root}lib/plugins`)
-const screenshotAutomation = require(`${root}lib/automation/screenshot`)
+const { Screenshot } = require(`${root}lib/automation/screenshot`)
 
 const image = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAAALlJREFUeNpi1F3xYAIDA4MBA35wgQWqyB5dRoaVmeHJ779wPhOM0aQtyBAoyglmOwmwM6z1lWY44CMDFgcBFmRTGp3EGGJe/WIQ5mZm4GRlBGJmhlm3PqGaeODpNzCtKsbGIARUCALvvv6FWw9XeOvrH4bbQNOQwfabnzHdGK3AwyAjyAqX2HPzC0Pn7Y9wPtyNIMGlD74wmAqwMZz+8AvFxzATVZAFQIqwABWQiWtgAY5uCnKAAwQYAPr8OZysiz4PAAAAAElFTkSuQmCC'
 const iso8601Regex = /^\d{4}\-\d{2}\-\d{2}T\d{2}\:\d{2}\:\d{2}\.?\d*Z?$/
@@ -577,6 +577,10 @@ describe('lib/screenshots', () => {
   })
 
   context('.getPath', () => {
+    beforeEach(() => {
+      sinon.stub(fs, 'outputFileAsync').resolves()
+    })
+
     it('concats spec name, screenshotsFolder, and name', () => {
       return screenshots.getPath({
         specName: 'examples/user/list.js',
@@ -618,6 +622,52 @@ describe('lib/screenshots', () => {
       })
     })
 
+    // @see https://github.com/cypress-io/cypress/issues/2403
+    it('truncates long paths with unicode in them', async () => {
+      const fullPath = await screenshots.getPath({
+        titles: [
+          'WMED: [STORY] Тестовые сценарии для CI',
+          'Сценарии:',
+          'Сценарий 2: Создание обращения, создание медзаписи, привязкапривязка обращения к медзаписи',
+          '- Сценарий 2',
+        ],
+        testFailure: true,
+        specName: 'WMED_UAT_Scenarios_For_CI_spec.js',
+      }, 'png', '/jenkins-slave/workspace/test-wmed/qa/cypress/wmed_ci/cypress/screenshots/')
+
+      const basename = path.basename(fullPath)
+
+      expect(Buffer.from(basename).byteLength).to.be.lessThan(255)
+    })
+
+    it('reacts to ENAMETOOLONG errors and tries to shorten the filename', async () => {
+      const err = new Error('enametoolong')
+
+      err.code = 'ENAMETOOLONG'
+
+      _.times(50, (i) => fs.outputFileAsync.onCall(i).rejects(err))
+
+      const fullPath = await screenshots.getPath({
+        specName: 'foo.js',
+        name: 'a'.repeat(256),
+      }, 'png', '/tmp')
+
+      expect(path.basename(fullPath)).to.have.length(204)
+    })
+
+    it('rejects with ENAMETOOLONG errors if name goes below MIN_PREFIX_LENGTH', async () => {
+      const err = new Error('enametoolong')
+
+      err.code = 'ENAMETOOLONG'
+
+      _.times(150, (i) => fs.outputFileAsync.onCall(i).rejects(err))
+
+      await expect(screenshots.getPath({
+        specName: 'foo.js',
+        name: 'a'.repeat(256),
+      }, 'png', '/tmp')).to.be.rejectedWith(err)
+    })
+
     _.each([Infinity, 0 / 0, [], {}, 1, false], (value) => {
       it(`doesn't err and stringifies non-string test title: ${value}`, () => {
         return screenshots.getPath({
@@ -632,7 +682,7 @@ describe('lib/screenshots', () => {
       })
     })
 
-    return _.each([null, undefined], (value) => {
+    _.each([null, undefined], (value) => {
       it(`doesn't err and removes null/undefined test title: ${value}`, () => {
         return screenshots.getPath({
           specName: 'examples$/user/list.js',
@@ -679,7 +729,7 @@ describe('lib/screenshots', () => {
       return sinon.stub(plugins, 'execute')
     })
 
-    it('resolves whitelisted details if no after:screenshot plugin registered', function () {
+    it('resolves allowed details if no after:screenshot plugin registered', function () {
       plugins.has.returns(false)
 
       return screenshots.afterScreenshot(this.data, this.details).then((result) => {
@@ -763,7 +813,7 @@ describe('lib/automation/screenshot', () => {
     this.updatedDetails = {}
     sinon.stub(screenshots, 'afterScreenshot').resolves(this.updatedDetails)
 
-    this.screenshot = screenshotAutomation('cypress/screenshots')
+    this.screenshot = Screenshot('cypress/screenshots')
   })
 
   it('captures screenshot', function () {

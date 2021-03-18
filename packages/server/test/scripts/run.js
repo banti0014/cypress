@@ -86,7 +86,7 @@ if (isGteNode12()) {
   // max HTTP header size 8kb -> 1mb
   // https://github.com/cypress-io/cypress/issues/76
   commandAndArguments.args.push(
-    `--max-http-header-size=${1024 * 1024} --http-parser=legacy`,
+    `--max-http-header-size=${1024 * 1024}`,
   )
 }
 
@@ -153,6 +153,10 @@ if (options.headed) {
 
 if (options.exit === false) {
   env.NO_EXIT = '1'
+}
+
+if (options['cypress-inspect-brk']) {
+  env.CYPRESS_INSPECT_BRK = '1'
 }
 
 const cmd = `${commandAndArguments.command} ${

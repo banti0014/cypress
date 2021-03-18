@@ -114,6 +114,30 @@ describe('lib/util/ci_provider', () => {
     })
   })
 
+  it('awsCodeBuild', () => {
+    resetEnv = mockedEnv({
+      CODEBUILD_BUILD_ID: 'codebuild-demo-project:b1e6661e-e4f2-4156-9ab9-82a19EXAMPLE',
+      CODEBUILD_BUILD_NUMBER: '123',
+      CODEBUILD_RESOLVED_SOURCE_VERSION: 'commit',
+      CODEBUILD_SOURCE_REPO_URL: 'repositoryUrl',
+      CODEBUILD_SOURCE_VERSION: 'commitOrBranchOrTag',
+    }, { clear: true })
+
+    expectsName('awsCodeBuild')
+    expectsCiParams({
+      codebuildBuildId: 'codebuild-demo-project:b1e6661e-e4f2-4156-9ab9-82a19EXAMPLE',
+      codebuildBuildNumber: '123',
+      codebuildResolvedSourceVersion: 'commit',
+      codebuildSourceRepoUrl: 'repositoryUrl',
+      codebuildSourceVersion: 'commitOrBranchOrTag',
+    })
+
+    return expectsCommitParams({
+      sha: 'commit',
+      remoteOrigin: 'repositoryUrl',
+    })
+  })
+
   it('bamboo', () => {
     resetEnv = mockedEnv({
       'bamboo_buildNumber': 'bambooBuildNumber',
@@ -150,6 +174,8 @@ describe('lib/util/ci_provider', () => {
       BITBUCKET_BUILD_NUMBER: 'bitbucketBuildNumber',
       BITBUCKET_REPO_OWNER: 'bitbucketRepoOwner',
       BITBUCKET_REPO_SLUG: 'bitbucketRepoSlug',
+      BITBUCKET_PARALLEL_STEP: 'bitbucketParallelStep',
+      BITBUCKET_STEP_RUN_NUMBER: 'bitbucketStepRunNumber',
 
       // git information
       BITBUCKET_COMMIT: 'bitbucketCommit',
@@ -161,6 +187,63 @@ describe('lib/util/ci_provider', () => {
       bitbucketBuildNumber: 'bitbucketBuildNumber',
       bitbucketRepoOwner: 'bitbucketRepoOwner',
       bitbucketRepoSlug: 'bitbucketRepoSlug',
+      bitbucketParallelStep: 'bitbucketParallelStep',
+      bitbucketStepRunNumber: 'bitbucketStepRunNumber',
+    })
+
+    expectsCommitParams({
+      sha: 'bitbucketCommit',
+      branch: 'bitbucketBranch',
+    })
+
+    expectsCommitDefaults({
+      sha: null,
+      branch: 'gitFoundBranch',
+    }, {
+      sha: 'bitbucketCommit',
+      branch: 'gitFoundBranch',
+    })
+
+    return expectsCommitDefaults({
+      sha: undefined,
+      branch: '',
+    }, {
+      sha: 'bitbucketCommit',
+      branch: 'bitbucketBranch',
+    })
+  })
+
+  it('bitbucket pull request', () => {
+    resetEnv = mockedEnv({
+      CI: '1',
+
+      // build information
+      BITBUCKET_BUILD_NUMBER: 'bitbucketBuildNumber',
+      BITBUCKET_REPO_OWNER: 'bitbucketRepoOwner',
+      BITBUCKET_REPO_SLUG: 'bitbucketRepoSlug',
+      BITBUCKET_PARALLEL_STEP: 'bitbucketParallelStep',
+      BITBUCKET_STEP_RUN_NUMBER: 'bitbucketStepRunNumber',
+
+      // git information
+      BITBUCKET_COMMIT: 'bitbucketCommit',
+      BITBUCKET_BRANCH: 'bitbucketBranch',
+
+      // pull request info
+      BITBUCKET_PR_ID: 'bitbucketPrId',
+      BITBUCKET_PR_DESTINATION_BRANCH: 'bitbucketPrDestinationBranch',
+      BITBUCKET_PR_DESTINATION_COMMIT: 'bitbucketPrDestinationCommit',
+    }, { clear: true })
+
+    expectsName('bitbucket')
+    expectsCiParams({
+      bitbucketBuildNumber: 'bitbucketBuildNumber',
+      bitbucketRepoOwner: 'bitbucketRepoOwner',
+      bitbucketRepoSlug: 'bitbucketRepoSlug',
+      bitbucketParallelStep: 'bitbucketParallelStep',
+      bitbucketStepRunNumber: 'bitbucketStepRunNumber',
+      bitbucketPrId: 'bitbucketPrId',
+      bitbucketPrDestinationBranch: 'bitbucketPrDestinationBranch',
+      bitbucketPrDestinationCommit: 'bitbucketPrDestinationCommit',
     })
 
     expectsCommitParams({
@@ -373,6 +456,52 @@ describe('lib/util/ci_provider', () => {
     })
 
     return expectsCommitParams(null)
+  })
+
+  it('codeFresh', () => {
+    resetEnv = mockedEnv({
+      // build information
+      'CF_BUILD_ID': 'cfBuildId',
+      'CF_BUILD_URL': 'cfBuildUrl',
+      'CF_CURRENT_ATTEMPT': 'cfCurrentAttempt',
+      'CF_STEP_NAME': 'cfStepName',
+      'CF_PIPELINE_NAME': 'cfPipelineName',
+      'CF_PIPELINE_TRIGGER_ID': 'cfPipelineTriggerId',
+
+      // variables added for pull requests
+      'CF_PULL_REQUEST_ID': 'cfPullRequestId',
+      'CF_PULL_REQUEST_IS_FORK': 'cfPullRequestIsFork',
+      'CF_PULL_REQUEST_NUMBER': 'cfPullRequestNumber',
+      'CF_PULL_REQUEST_TARGET': 'cfPullRequestTarget',
+
+      // git information
+      CF_REVISION: 'cfRevision',
+      CF_BRANCH: 'cfBranch',
+      CF_COMMIT_MESSAGE: 'cfCommitMessage',
+      CF_COMMIT_AUTHOR: 'cfCommitAuthor',
+    }, { clear: true })
+
+    expectsName('codeFresh')
+    expectsCiParams({
+      cfBuildId: 'cfBuildId',
+      cfBuildUrl: 'cfBuildUrl',
+      cfCurrentAttempt: 'cfCurrentAttempt',
+      cfStepName: 'cfStepName',
+      cfPipelineName: 'cfPipelineName',
+      cfPipelineTriggerId: 'cfPipelineTriggerId',
+      // pull request variables
+      cfPullRequestId: 'cfPullRequestId',
+      cfPullRequestIsFork: 'cfPullRequestIsFork',
+      cfPullRequestNumber: 'cfPullRequestNumber',
+      cfPullRequestTarget: 'cfPullRequestTarget',
+    })
+
+    expectsCommitParams({
+      sha: 'cfRevision',
+      branch: 'cfBranch',
+      message: 'cfCommitMessage',
+      authorName: 'cfCommitAuthor',
+    })
   })
 
   it('drone', () => {

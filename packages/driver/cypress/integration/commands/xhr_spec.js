@@ -305,39 +305,6 @@ describe('src/cy/commands/xhr', () => {
       })
     })
 
-    // FIXME: I have no idea why this is skipped, this test is rly old
-    describe.skip('filtering requests', () => {
-      beforeEach(() => {
-        cy.server()
-      })
-
-      const extensions = {
-        html: 'ajax html',
-        js: '{foo: "bar"}',
-        css: 'body {}',
-      }
-
-      _.each(extensions, (val, ext) => {
-        it(`filters out non ajax requests by default for extension: .${ext}`, (done) => {
-          cy.state('window').$.get(`/fixtures/app.${ext}`).done((res) => {
-            expect(res).to.eq(val)
-
-            done()
-          })
-        })
-      })
-
-      it('can disable default filtering', (done) => {
-        // this should throw since it should return 404 when no
-        // route matches it
-        cy.server({ ignore: false }).window().then((w) => {
-          Promise.resolve(w.$.get('/fixtures/app.html')).catch(() => {
-            done()
-          })
-        })
-      })
-    })
-
     describe('url rewriting', () => {
       it('has a FQDN absolute-relative url', () => {
         cy
@@ -865,6 +832,34 @@ describe('src/cy/commands/xhr', () => {
           })
         })
 
+        // https://github.com/cypress-io/cypress/issues/8018
+        it('logs empty string response as stubbed', () => {
+          cy
+          .server()
+          .route(/foo/, '').as('getFoo')
+          .window().then((win) => {
+            win.$.get('foo')
+
+            return null
+          }).then(function () {
+            const { lastLog } = this
+
+            expect(lastLog.pick('name', 'displayName', 'event', 'alias', 'aliasType', 'state')).to.deep.eq({
+              name: 'xhr',
+              displayName: 'xhr stub',
+              event: true,
+              alias: 'getFoo',
+              aliasType: 'route',
+              state: 'pending',
+            })
+
+            const snapshots = lastLog.get('snapshots')
+
+            expect(snapshots.length).to.eq(1)
+            expect(snapshots[0].name).to.eq('request')
+          })
+        })
+
         it('does not end xhr requests when the associated command ends', () => {
           let logs = null
 
@@ -1086,6 +1081,15 @@ describe('src/cy/commands/xhr', () => {
   })
 
   context('#server', () => {
+    it('logs deprecation warning', () => {
+      cy.stub(Cypress.utils, 'warning')
+
+      cy.server()
+      .then(function () {
+        expect(Cypress.utils.warning).to.be.calledWithMatch(/^`cy\.server\(\)` has been deprecated and will be moved to a plugin in a future release\. Consider migrating to using `cy\.intercept\(\)` instead\./)
+      })
+    })
+
     it('sets serverIsStubbed', () => {
       cy.server().then(() => {
         expect(cy.state('serverIsStubbed')).to.be.true
@@ -1136,6 +1140,14 @@ describe('src/cy/commands/xhr', () => {
       .route('*', {})
       .then(() => {
         expect(cy.state('server').getRoutes()[0].delay).to.eq(0)
+      })
+    })
+
+    it('sets ignore as function by default', () => {
+      cy.server()
+      cy.route('*', {})
+      .then(() => {
+        expect(cy.state('server').getRoutes()[0].ignore).to.be.a('function')
       })
     })
 
@@ -1243,110 +1255,6 @@ describe('src/cy/commands/xhr', () => {
     })
   })
 
-  // FIXME: I have no idea why this is skipped, this test is rly old
-  context.skip('#server', () => {
-    beforeEach(function () {
-      const defaults = {
-        ignore: true,
-        respond: true,
-        delay: 10,
-        beforeRequest () {},
-        afterResponse () {},
-        onAbort () {},
-        onError () {},
-        onFilter () {},
-      }
-
-      this.options = (obj) => {
-        return _.extend(obj, defaults)
-      }
-
-      this.create = cy.spy(this.Cypress.Server, 'create')
-    })
-
-    it('can accept an onRequest and onResponse callback', function (done) {
-      const onRequest = () => {}
-      const onResponse = () => {}
-
-      cy.on('end', () => {
-        expect(this.create.getCall(0).args[1]).to.have.keys(_.keys(this.options({ onRequest, onResponse })))
-
-        done()
-      })
-
-      cy.server(onRequest, onResponse)
-    })
-
-    it('can accept onRequest and onRespond through options', function (done) {
-      const onRequest = () => {}
-      const onResponse = () => {}
-
-      cy.on('end', () => {
-        expect(this.create.getCall(0).args[1]).to.have.keys(_.keys(this.options({ onRequest, onResponse })))
-
-        done()
-      })
-
-      cy.server({ onRequest, onResponse })
-    })
-
-    describe('without sinon present', () => {
-      beforeEach(() => {
-        // force us to start from blank window
-        cy.state('$autIframe').prop('src', 'about:blank')
-      })
-
-      it('can start server with no errors', () => {
-        cy
-        .server()
-        .visit('http://localhost:3500/fixtures/sinon.html')
-      })
-
-      it('can add routes with no errors', () => {
-        cy
-        .server()
-        .route(/foo/, {})
-        .visit('http://localhost:3500/fixtures/sinon.html')
-      })
-
-      it('routes xhr requests', () => {
-        cy
-        .server()
-        .route(/foo/, { foo: 'bar' })
-        .visit('http://localhost:3500/fixtures/sinon.html')
-        .window().then((w) => {
-          return w.$.get('/foo')
-        })
-        .then((resp) => {
-          expect(resp).to.deep.eq({ foo: 'bar' })
-        })
-      })
-
-      it('works with aliases', () => {
-        cy
-        .server()
-        .route(/foo/, { foo: 'bar' }).as('getFoo')
-        .visit('http://localhost:3500/fixtures/sinon.html')
-        .window().then((w) => {
-          return w.$.get('/foo')
-        })
-        .wait('@getFoo').then((xhr) => {
-          expect(xhr.responseText).to.eq(JSON.stringify({ foo: 'bar' }))
-        })
-      })
-
-      it('prevents XHR\'s from going out from sinon.html', () => {
-        cy
-        .server()
-        .route(/bar/, { bar: 'baz' }).as('getBar')
-        .visit('http://localhost:3500/fixtures/sinon.html')
-        .wait('@getBar').then((xhr) => {
-          expect(xhr.responseText).to.eq(JSON.stringify({ bar: 'baz' }))
-        })
-      })
-    })
-  })
-
   context('#route', () => {
     beforeEach(function () {
       this.expectOptionsToBe = (opts) => {
@@ -1359,6 +1267,15 @@ describe('src/cy/commands/xhr', () => {
 
       cy.server().then(function () {
         this.route = cy.spy(cy.state('server'), 'route')
+      })
+    })
+
+    it('logs deprecation warning', () => {
+      cy.stub(Cypress.utils, 'warning')
+
+      cy.route('*')
+      .then(function () {
+        expect(Cypress.utils.warning).to.be.calledWithMatch(/^`cy\.route\(\)` has been deprecated and will be moved to a plugin in a future release\. Consider migrating to using `cy\.intercept\(\)` instead\./)
       })
     })
 
@@ -1743,7 +1660,7 @@ describe('src/cy/commands/xhr', () => {
 
       cy.route('GET', 'http://example.com/%E0%A4%A')
       .then(() => {
-        expect(Cypress.utils.warning).to.not.be.called
+        expect(Cypress.utils.warning).to.not.be.calledWithMatch(/percent\-encoded characters/)
       })
     })
 
@@ -1752,33 +1669,6 @@ describe('src/cy/commands/xhr', () => {
       cy.route({
         url: /foo/,
         respond: false,
-      })
-    })
-
-    describe('deprecations', () => {
-      beforeEach(function () {
-        this.warn = cy.spy(window.top.console, 'warn')
-      })
-
-      it('logs on {force404: false}', () => {
-        cy.server({ force404: false })
-        .then(function () {
-          expect(this.warn).to.be.calledWith('Cypress Warning: Passing `cy.server({force404: false})` is now the default behavior of `cy.server()`. You can safely remove this option.')
-        })
-      })
-
-      it('does not log on {force404: true}', () => {
-        cy.server({ force404: true })
-        .then(function () {
-          expect(this.warn).not.to.be.called
-        })
-      })
-
-      it('logs on {stub: false}', () => {
-        cy.server({ stub: false })
-        .then(function () {
-          expect(this.warn).to.be.calledWithMatch('Cypress Warning: Passing `cy.server({stub: false})` is now deprecated. You can safely remove: `{stub: false}`.\n\nhttps://on.cypress.io/deprecated-stub-false-on-server')
-        })
       })
     })
 
@@ -1881,6 +1771,36 @@ describe('src/cy/commands/xhr', () => {
 
         cy.contains('#result', '""').should('be.visible')
       })
+
+      it('works if the JSON file has number content', () => {
+        cy
+        .server()
+        .route({
+          method: 'POST',
+          url: '/test-xhr',
+          response: 'fixture:number.json',
+        })
+        .visit('/fixtures/xhr-triggered.html')
+        .get('#trigger-xhr')
+        .click()
+
+        cy.contains('#result', 14).should('be.visible')
+      })
+
+      it('works if the JSON file has boolean content', () => {
+        cy
+        .server()
+        .route({
+          method: 'POST',
+          url: '/test-xhr',
+          response: 'fixture:boolean.json',
+        })
+        .visit('/fixtures/xhr-triggered.html')
+        .get('#trigger-xhr')
+        .click()
+
+        cy.contains('#result', /true/).should('be.visible')
+      })
     })
 
     describe('errors', {
@@ -1907,6 +1827,16 @@ describe('src/cy/commands/xhr', () => {
         })
 
         cy.route()
+      })
+
+      it('throws on use of whitelist option', (done) => {
+        cy.on('fail', (err) => {
+          expect(err.message).to.include('The `cy.server()` `whitelist` option has been renamed to `ignore`. Please rename `whitelist` to `ignore`.')
+
+          done()
+        })
+
+        cy.server({ whitelist: () => { } })
       })
 
       it('url must be a string or regexp', (done) => {
@@ -2122,6 +2052,21 @@ describe('src/cy/commands/xhr', () => {
         .wrap({ foo: 'bar' }).as('foo')
         .route(/foo/, '@bar')
       })
+
+      // https://github.com/cypress-io/cypress/issues/7818
+      it('throws when fixture cannot be found', (done) => {
+        cy.on('fail', (err) => {
+          expect(err.message).to.contains('A fixture file could not be found at any of the following paths:')
+          done()
+        })
+
+        cy.route(/foo/, 'fx:NOT_EXISTING_FILE_FIXTURE').as('stub')
+        cy.window().then((win) => {
+          win.$.get('/foo')
+        })
+
+        cy.wait('@stub')
+      })
     })
 
     describe('.log', () => {
@@ -2285,8 +2230,8 @@ describe('src/cy/commands/xhr', () => {
       })
     })
 
-    describe('whitelisting', () => {
-      it('does not send back 404s on whitelisted routes', () => {
+    describe('ignored routes', () => {
+      it('does not send back 404s on allowed routes', () => {
         cy
         .server()
         .window().then((win) => {
@@ -2298,7 +2243,7 @@ describe('src/cy/commands/xhr', () => {
       })
 
       // https://github.com/cypress-io/cypress/issues/7280
-      it('ignores query params when whitelisting routes', () => {
+      it('ignores query params when filtering routes', () => {
         cy.server()
         cy.route(/url-with-query-param/, { foo: 'bar' }).as('getQueryParam')
         cy.window().then((win) => {
@@ -2312,7 +2257,7 @@ describe('src/cy/commands/xhr', () => {
       })
 
       // https://github.com/cypress-io/cypress/issues/7280
-      it('ignores hashes when whitelisting routes', () => {
+      it('ignores hashes when filtering routes', () => {
         cy.server()
         cy.route(/url-with-hash/, { foo: 'bar' }).as('getHash')
         cy.window().then((win) => {
@@ -2323,6 +2268,30 @@ describe('src/cy/commands/xhr', () => {
 
         cy.wait('@getHash').its('response.body')
         .should('deep.equal', { foo: 'bar' })
+      })
+
+      it('overrides ignoring resources when passed as option', () => {
+        cy.server({ ignore: () => false })
+        cy.route('app.js', { foo: 'bar' }).as('getJSResource')
+        cy.route('index.html', '<html></html>').as('getHTMLResource')
+        cy.route('style.css', 'body: {color: red;}').as('getCSSResource')
+        cy.window().then((win) => {
+          win.$.get('/fixtures/app.js')
+          win.$.get('/fixtures/style.css')
+
+          return win.$.get('/fixtures/index.html')
+        })
+
+        // normally these resources would be ignored
+        // but overwriting ignore to return false allows all resources
+        cy.wait('@getJSResource').its('response.body')
+        .should('deep.equal', { foo: 'bar' })
+
+        cy.wait('@getHTMLResource').its('response.body')
+        .should('deep.equal', '<html></html>')
+
+        cy.wait('@getCSSResource').its('response.body')
+        .should('deep.equal', 'body: {color: red;}')
       })
     })
 

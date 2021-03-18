@@ -46,6 +46,7 @@ namespace CypressConfigTests {
   Cypress.config({ baseUrl: '.', }) // $ExpectType void
 
   Cypress.config('taskTimeout') // $ExpectType number
+  Cypress.config('includeShadowDom') // $ExpectType boolean
 }
 
 namespace CypressEnvTests {
@@ -75,6 +76,9 @@ namespace CypressCommandsTests {
   })
   Cypress.Commands.add('newCommand', { prevSubject: true }, () => {
     return
+  })
+  Cypress.Commands.add('newCommand', () => {
+    return new Promise((resolve) => {})
   })
   Cypress.Commands.overwrite('newCommand', () => {
     return
@@ -124,6 +128,9 @@ namespace CypressItsTests {
     s
   })
   cy.wrap({baz: { quux: '2' }}).its('baz.quux') // $ExpectType Chainable<any>
+  cy.wrap({foo: 'bar'}).its('foo', { log: true }) // $ExpectType Chainable<string>
+  cy.wrap({foo: 'bar'}).its('foo', { timeout: 100 }) // $ExpectType Chainable<string>
+  cy.wrap({foo: 'bar'}).its('foo', { log: true, timeout: 100 }) // $ExpectType Chainable<string>
 }
 
 namespace CypressInvokeTests {
@@ -133,6 +140,8 @@ namespace CypressInvokeTests {
   cy.wrap({ a: returnsString }).invoke('a') // $ExpectType Chainable<string>
   cy.wrap({ b: returnsNumber }).invoke('b') // $ExpectType Chainable<number>
   cy.wrap({ b: returnsNumber }).invoke({ log: true }, 'b') // $ExpectType Chainable<number>
+  cy.wrap({ b: returnsNumber }).invoke({ timeout: 100 }, 'b') // $ExpectType Chainable<number>
+  cy.wrap({ b: returnsNumber }).invoke({ log: true, timeout: 100 }, 'b') // $ExpectType Chainable<number>
 
   // challenging to define a more precise return type than string | number here
   cy.wrap([returnsString, returnsNumber]).invoke(1) // $ExpectType Chainable<string | number>
@@ -231,7 +240,7 @@ describe('then', () => {
 
 cy.wait(['@foo', '@bar'])
   .then(([first, second]) => {
-    first // $ExpectType WaitXHR
+    first // $ExpectType Interception
   })
 
 cy.wait(1234) // $ExpectType Chainable<undefined>
@@ -306,39 +315,67 @@ cy
     subject // $ExpectType undefined
   })
 
+namespace CypressAUTWindowTests {
+  cy.go(2).then((win) => {
+    win // $ExpectType AUTWindow
+  })
+
+  cy.reload().then((win) => {
+    win // $ExpectType AUTWindow
+  })
+
+  cy.visit('https://google.com').then(win => {
+    win // $ExpectType AUTWindow
+  })
+
+  cy.window().then(win => {
+    win // $ExpectType AUTWindow
+  })
+}
+
 namespace CypressOnTests {
   Cypress.on('uncaught:exception', (error, runnable) => {
     error // $ExpectType Error
-    runnable // $ExpectType IRunnable
+    runnable // $ExpectType Runnable
   })
 
   cy.on('uncaught:exception', (error, runnable) => {
     error // $ExpectType Error
-    runnable // $ExpectType IRunnable
+    runnable // $ExpectType Runnable
   })
+
+  // you can chain multiple callbacks
+  Cypress
+    .on('test:before:run', () => { })
+    .on('test:after:run', () => { })
+    .on('test:before:run:async', () => { })
+
+  cy
+    .on('window:before:load', () => { })
+    .on('command:start', () => { })
 }
 
 namespace CypressOnceTests {
   Cypress.once('uncaught:exception', (error, runnable) => {
     error // $ExpectType Error
-    runnable // $ExpectType IRunnable
+    runnable // $ExpectType Runnable
   })
 
   cy.once('uncaught:exception', (error, runnable) => {
     error // $ExpectType Error
-    runnable // $ExpectType IRunnable
+    runnable // $ExpectType Runnable
   })
 }
 
 namespace CypressOffTests {
   Cypress.off('uncaught:exception', (error, runnable) => {
     error // $ExpectType Error
-    runnable // $ExpectType IRunnable
+    runnable // $ExpectType Runnable
   })
 
   cy.off('uncaught:exception', (error, runnable) => {
     error // $ExpectType Error
-    runnable // $ExpectType IRunnable
+    runnable // $ExpectType Runnable
   })
 }
 
@@ -363,6 +400,10 @@ namespace CypressScreenshotTests {
     log: true,
     blackout: []
   })
+}
+
+namespace CypressShadowDomTests {
+  cy.get('my-component').shadow()
 }
 
 namespace CypressTriggerTests {
@@ -507,18 +548,53 @@ namespace CypressDomTests {
 namespace CypressTestConfigOverridesTests {
   // set config on a per-test basis
   it('test', {
+    animationDistanceThreshold: 10,
+    baseUrl: 'www.foobar.com',
+    defaultCommandTimeout: 6000,
+    env: {},
+    execTimeout: 6000,
+    includeShadowDom: true,
+    requestTimeout: 6000,
+    responseTimeout: 6000,
+    scrollBehavior: 'center',
+    taskTimeout: 6000,
+    viewportHeight: 200,
+    viewportWidth: 200,
+    waitForAnimations: false
+  }, () => { })
+  it('test', {
     browser: {name: 'firefox'}
   }, () => {})
   it('test', {
     browser: [{name: 'firefox'}, {name: 'chrome'}]
   }, () => {})
   it('test', {
-    baseUrl: 'www.foobar.com',
     browser: 'firefox'
   }, () => {})
   it('test', {
     browser: {foo: 'bar'} // $ExpectError
   }, () => {})
+
+  it('test', {
+    retries: null
+  }, () => { })
+  it('test', {
+    retries: 3
+  }, () => { })
+  it('test', {
+    retries: {
+      runMode: 3,
+      openMode: null
+    }
+  }, () => { })
+  it('test', {
+    retries: {
+      runMode: 3,
+    }
+  }, () => { })
+  it('test', {
+    retries: { run: 3 } // $ExpectError
+  }, () => { })
 
   it.skip('test', {}, () => {})
   it.only('test', {}, () => {})
@@ -560,4 +636,16 @@ namespace CypressShadowTests {
   cy
   .get('.foo')
   .find('.bar', {includeShadowDom: true})
+}
+
+namespace CypressTaskTests {
+  cy.task<number>('foo') // $ExpectType Chainable<number>
+  cy.task<number>('foo').then((val) => {
+    val // $ExpectType number
+  })
+
+  cy.task('foo') // $ExpectType Chainable<unknown>
+  cy.task('foo').then((val) => {
+    val // $ExpectType unknown
+  })
 }

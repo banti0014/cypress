@@ -30,6 +30,12 @@ const isAzureCi = () => {
   return process.env.TF_BUILD && process.env.AZURE_HTTP_USER_AGENT
 }
 
+const isAWSCodeBuild = () => {
+  return _.some(process.env, (val, key) => {
+    return /^CODEBUILD_/.test(key)
+  })
+}
+
 const isBamboo = () => {
   return process.env.bamboo_buildNumber
 }
@@ -82,6 +88,7 @@ const isWercker = () => {
 const CI_PROVIDERS = {
   'appveyor': 'APPVEYOR',
   'azure': isAzureCi,
+  'awsCodeBuild': isAWSCodeBuild,
   'bamboo': isBamboo,
   'bitbucket': 'BITBUCKET_BUILD_NUMBER',
   'buildkite': 'BUILDKITE',
@@ -89,6 +96,7 @@ const CI_PROVIDERS = {
   'codeshipBasic': isCodeshipBasic,
   'codeshipPro': isCodeshipPro,
   'concourse': isConcourse,
+  codeFresh: 'CF_BUILD_ID',
   'drone': 'DRONE',
   githubActions: 'GITHUB_ACTIONS',
   'gitlab': isGitlab,
@@ -139,6 +147,13 @@ const _providerCiParams = () => {
       'BUILD_CONTAINERID',
       'BUILD_REPOSITORY_URI',
     ]),
+    awsCodeBuild: extract([
+      'CODEBUILD_BUILD_ID',
+      'CODEBUILD_BUILD_NUMBER',
+      'CODEBUILD_RESOLVED_SOURCE_VERSION',
+      'CODEBUILD_SOURCE_REPO_URL',
+      'CODEBUILD_SOURCE_VERSION',
+    ]),
     bamboo: extract([
       'bamboo_buildNumber',
       'bamboo_buildResultsUrl',
@@ -149,6 +164,12 @@ const _providerCiParams = () => {
       'BITBUCKET_REPO_SLUG',
       'BITBUCKET_REPO_OWNER',
       'BITBUCKET_BUILD_NUMBER',
+      'BITBUCKET_PARALLEL_STEP',
+      'BITBUCKET_STEP_RUN_NUMBER',
+      // the PR variables are only set on pull request builds
+      'BITBUCKET_PR_ID',
+      'BITBUCKET_PR_DESTINATION_BRANCH',
+      'BITBUCKET_PR_DESTINATION_COMMIT',
     ]),
     buildkite: extract([
       'BUILDKITE_REPO',
@@ -197,6 +218,20 @@ const _providerCiParams = () => {
       'BUILD_PIPELINE_NAME',
       'BUILD_TEAM_NAME',
       'ATC_EXTERNAL_URL',
+    ]),
+    // https://codefresh.io/docs/docs/codefresh-yaml/variables/
+    codeFresh: extract([
+      'CF_BUILD_ID',
+      'CF_BUILD_URL',
+      'CF_CURRENT_ATTEMPT',
+      'CF_STEP_NAME',
+      'CF_PIPELINE_NAME',
+      'CF_PIPELINE_TRIGGER_ID',
+      // variables added for pull requests
+      'CF_PULL_REQUEST_ID',
+      'CF_PULL_REQUEST_IS_FORK',
+      'CF_PULL_REQUEST_NUMBER',
+      'CF_PULL_REQUEST_TARGET',
     ]),
     drone: extract([
       'DRONE_JOB_NUMBER',
@@ -375,6 +410,15 @@ const _providerCommitParams = () => {
       // remoteOrigin: ???
       // defaultBranch: ???
     },
+    awsCodeBuild: {
+      sha: env.CODEBUILD_RESOLVED_SOURCE_VERSION,
+      // branch: ???,
+      // message: ???
+      // authorName: ???
+      // authorEmail: ???
+      remoteOrigin: env.CODEBUILD_SOURCE_REPO_URL,
+      // defaultBranch: ???
+    },
     azure: {
       sha: env.BUILD_SOURCEVERSION,
       branch: env.BUILD_SOURCEBRANCHNAME,
@@ -435,6 +479,12 @@ const _providerCommitParams = () => {
       authorEmail: env.CI_COMMITTER_EMAIL,
       // remoteOrigin: ???
       // defaultBranch: ???
+    },
+    codeFresh: {
+      sha: env.CF_REVISION,
+      branch: env.CF_BRANCH,
+      message: env.CF_COMMIT_MESSAGE,
+      authorName: env.CF_COMMIT_AUTHOR,
     },
     drone: {
       sha: env.DRONE_COMMIT_SHA,

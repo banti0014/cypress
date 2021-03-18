@@ -27,17 +27,30 @@ exports['lib/reporter #stats has reporterName stats, reporterStats, etc 1'] = {
       ],
       "state": "failed",
       "body": "",
-      "stack": [
-        1,
-        2,
-        3
-      ],
-      "error": "foo",
-      "timings": null,
-      "failedFromHookId": null,
-      "wallClockStartedAt": null,
-      "wallClockDuration": null,
-      "videoTimestamp": null
+      "displayError": "at foo:1:1\nat bar:1:1\nat baz:1:1",
+      "attempts": [
+        {
+          "state": "failed",
+          "error": {
+            "message": "foo",
+            "stack": "at foo:1:1\nat bar:1:1\nat baz:1:1",
+            "codeFrame": {
+              "line": 7,
+              "column": 8,
+              "originalFile": "cypress/integration/spec.js",
+              "relativeFile": "cypress/integration/spec.js",
+              "absoluteFile": "/path/to/cypress/integration/spec.js",
+              "frame": "   5 | \n   6 |   it('fails', () => {\n>  7 |     cy.get('nope', { timeout: 1 })\n     |        ^\n   8 |   })\n   9 | })\n  10 | ",
+              "language": "js"
+            }
+          },
+          "timings": null,
+          "failedFromHookId": null,
+          "wallClockStartedAt": null,
+          "wallClockDuration": null,
+          "videoTimestamp": null
+        }
+      ]
     },
     {
       "testId": "r5",
@@ -48,13 +61,18 @@ exports['lib/reporter #stats has reporterName stats, reporterStats, etc 1'] = {
       ],
       "state": "pending",
       "body": "",
-      "stack": null,
-      "error": null,
-      "timings": null,
-      "failedFromHookId": null,
-      "wallClockStartedAt": null,
-      "wallClockDuration": null,
-      "videoTimestamp": null
+      "displayError": null,
+      "attempts": [
+        {
+          "state": "pending",
+          "error": null,
+          "timings": null,
+          "failedFromHookId": null,
+          "wallClockStartedAt": null,
+          "wallClockDuration": null,
+          "videoTimestamp": null
+        }
+      ]
     }
   ]
 }

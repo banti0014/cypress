@@ -60,6 +60,7 @@ The ciBuildId is automatically detected if you are running Cypress in any of the
 
 - appveyor
 - azure
+- awsCodeBuild
 - bamboo
 - bitbucket
 - buildkite
@@ -67,6 +68,7 @@ The ciBuildId is automatically detected if you are running Cypress in any of the
 - codeshipBasic
 - codeshipPro
 - concourse
+- codeFresh
 - drone
 - githubActions
 - gitlab
@@ -95,6 +97,7 @@ The ciBuildId is automatically detected if you are running Cypress in any of the
 
 - appveyor
 - azure
+- awsCodeBuild
 - bamboo
 - bitbucket
 - buildkite
@@ -102,6 +105,7 @@ The ciBuildId is automatically detected if you are running Cypress in any of the
 - codeshipBasic
 - codeshipPro
 - concourse
+- codeFresh
 - drone
 - githubActions
 - gitlab
@@ -131,6 +135,7 @@ The ciBuildId is automatically detected if you are running Cypress in any of the
 
 - appveyor
 - azure
+- awsCodeBuild
 - bamboo
 - bitbucket
 - buildkite
@@ -138,6 +143,7 @@ The ciBuildId is automatically detected if you are running Cypress in any of the
 - codeshipBasic
 - codeshipPro
 - concourse
+- codeFresh
 - drone
 - githubActions
 - gitlab
@@ -290,4 +296,11 @@ Cypress encountered an error while parsing the argument reporterOptions
 You passed: nonono
 
 The error was: Cannot read property 'split' of undefined
+`
+
+exports['INVALID_CONFIG_OPTION'] = `
+\`test\` is not a valid configuration option,\`foo\` is not a valid configuration option
+
+https://on.cypress.io/configuration
+
 `

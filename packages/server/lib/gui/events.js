@@ -1,7 +1,7 @@
 /* eslint-disable no-case-declarations */
 const _ = require('lodash')
 const ipc = require('electron').ipcMain
-const { shell, clipboard } = require('electron')
+const { clipboard } = require('electron')
 const debug = require('debug')('cypress:server:events')
 const pluralize = require('pluralize')
 const stripAnsi = require('strip-ansi')
@@ -10,11 +10,12 @@ const pkg = require('./package')
 const logs = require('./logs')
 const auth = require('./auth')
 const Windows = require('./windows')
+const { openExternal } = require('./links')
 const open = require('../util/open')
 const user = require('../user')
 const errors = require('../errors')
 const Updater = require('../updater')
-const Project = require('../project')
+const { ProjectBase } = require('../project-base')
 const openProject = require('../open_project')
 const ensureUrl = require('../util/ensure-url')
 const chromePolicyCheck = require('../util/chrome_policy_check')
@@ -22,6 +23,7 @@ const browsers = require('../browsers')
 const konfig = require('../konfig')
 const editors = require('../util/editors')
 const fileOpener = require('../util/file-opener')
+const api = require('../api')
 
 const nullifyUnserializableValues = (obj) => {
   // nullify values that cannot be cloned
@@ -35,6 +37,11 @@ const nullifyUnserializableValues = (obj) => {
 
 const handleEvent = function (options, bus, event, id, type, arg) {
   debug('got request for event: %s, %o', type, arg)
+
+  _.defaults(options, {
+    windowOpenFn: Windows.open,
+    getWindowByWebContentsFn: Windows.getByWebContents,
+  })
 
   const sendResponse = function (originalData = {}) {
     try {
@@ -117,7 +124,7 @@ const handleEvent = function (options, bus, event, id, type, arg) {
       .catch(sendErr)
 
     case 'external:open':
-      return shell.openExternal(arg)
+      return openExternal(arg)
 
     case 'close:browser':
       return openProject.closeBrowser()
@@ -127,12 +134,18 @@ const handleEvent = function (options, bus, event, id, type, arg) {
     case 'launch:browser':
       // is there a way to lint the arguments received?
       debug('launching browser for \'%s\' spec: %o', arg.specType, arg.spec)
+      debug('full list of options %o', arg)
+
       // the "arg" should have objects for
       //   - browser
       //   - spec (with fields)
       //       name, absolute, relative
       //   - specType: "integration" | "component"
-      const fullSpec = _.merge({}, arg.spec, { specType: arg.specType })
+      //   - specFilter (optional): the string user searched for
+      const fullSpec = _.merge({}, arg.spec, {
+        specType: arg.specType,
+        specFilter: arg.specFilter,
+      })
 
       return openProject.launch(arg.browser, fullSpec, {
         projectRoot: options.projectRoot,
@@ -161,12 +174,12 @@ const handleEvent = function (options, bus, event, id, type, arg) {
       .catch(sendErr)
 
     case 'window:open':
-      return Windows.open(options.projectRoot, arg)
+      return options.windowOpenFn(options.projectRoot, arg)
       .then(send)
       .catch(sendErr)
 
     case 'window:close':
-      return Windows.getByWebContents(event.sender).destroy()
+      return options.getWindowByWebContentsFn(event.sender).destroy()
 
     case 'open:file':
       return fileOpener.openFile(arg)
@@ -191,6 +204,11 @@ const handleEvent = function (options, bus, event, id, type, arg) {
         },
       })
 
+    case 'get:release:notes':
+      return api.getReleaseNotes(arg)
+      .then(send)
+      .catch(sendNull)
+
     case 'get:logs':
       return logs.get()
       .then(send)
@@ -210,32 +228,37 @@ const handleEvent = function (options, bus, event, id, type, arg) {
       return send(null)
 
     case 'get:orgs':
-      return Project.getOrgs()
+      return ProjectBase.getOrgs()
       .then(send)
       .catch(sendErr)
 
     case 'get:projects':
-      return Project.getPathsAndIds()
+      return ProjectBase.getPathsAndIds()
       .then(send)
       .catch(sendErr)
 
     case 'get:project:statuses':
-      return Project.getProjectStatuses(arg)
+      return ProjectBase.getProjectStatuses(arg)
       .then(send)
       .catch(sendErr)
 
     case 'get:project:status':
-      return Project.getProjectStatus(arg)
+      return ProjectBase.getProjectStatus(arg)
+      .then(send)
+      .catch(sendErr)
+
+    case 'get:dashboard:projects':
+      return ProjectBase.getDashboardProjects()
       .then(send)
       .catch(sendErr)
 
     case 'add:project':
-      return Project.add(arg, options)
+      return ProjectBase.add(arg, options)
       .then(send)
       .catch(sendErr)
 
     case 'remove:project':
-      return Project.remove(arg)
+      return ProjectBase.remove(arg)
       .then(() => {
         return send(arg)
       })
@@ -301,6 +324,11 @@ const handleEvent = function (options, bus, event, id, type, arg) {
 
     case 'setup:dashboard:project':
       return openProject.createCiProject(arg)
+      .then(send)
+      .catch(sendErr)
+
+    case 'set:project:id':
+      return openProject.writeProjectId(arg)
       .then(send)
       .catch(sendErr)
 

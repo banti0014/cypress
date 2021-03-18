@@ -1,6 +1,5 @@
 const _ = require('lodash')
 const $ = require('jquery')
-const chai = require('chai')
 const blobUtil = require('blob-util')
 const minimatch = require('minimatch')
 const moment = require('moment')
@@ -25,6 +24,7 @@ const $LocalStorage = require('./cypress/local_storage')
 const $Mocha = require('./cypress/mocha')
 const $Mouse = require('./cy/mouse')
 const $Runner = require('./cypress/runner')
+const $Downloads = require('./cypress/downloads')
 const $Server = require('./cypress/server')
 const $Screenshot = require('./cypress/screenshot')
 const $SelectorPlayground = require('./cypress/selector_playground')
@@ -43,34 +43,6 @@ const jqueryProxyFn = function (...args) {
   return this.cy.$$.apply(this.cy, args)
 }
 
-// provide the old interface and
-// throw a deprecation message
-$Log.command = () => {
-  return $errUtils.throwErrByPath('miscellaneous.command_log_renamed')
-}
-
-const throwDeprecatedCommandInterface = (key = 'commandName', method) => {
-  let signature = ''
-
-  switch (method) {
-    case 'addParentCommand':
-      signature = `'${key}', function(){...}`
-      break
-    case 'addChildCommand':
-      signature = `'${key}', { prevSubject: true }, function(){...}`
-      break
-    case 'addDualCommand':
-      signature = `'${key}', { prevSubject: 'optional' }, function(){...}`
-      break
-    default:
-      break
-  }
-
-  $errUtils.throwErrByPath('miscellaneous.custom_command_interface_changed', {
-    args: { method, signature },
-  })
-}
-
 const throwPrivateCommandInterface = (method) => {
   $errUtils.throwErrByPath('miscellaneous.private_custom_command_interface', {
     args: { method },
@@ -83,6 +55,7 @@ class $Cypress {
     this.chai = null
     this.mocha = null
     this.runner = null
+    this.downloads = null
     this.Commands = null
     this.$autIframe = null
     this.onSpecReady = null
@@ -161,9 +134,23 @@ class $Cypress {
     _.extend(this, browserInfo(config))
 
     this.state = $SetterGetter.create({})
+    this.originalConfig = _.cloneDeep(config)
     this.config = $SetterGetter.create(config)
     this.env = $SetterGetter.create(env)
-    this.getFirefoxGcInterval = $FirefoxForcedGc.createIntervalGetter(this.config)
+    this.getFirefoxGcInterval = $FirefoxForcedGc.createIntervalGetter(this)
+    this.getTestRetries = function () {
+      const testRetries = this.config('retries')
+
+      if (_.isNumber(testRetries)) {
+        return testRetries
+      }
+
+      if (_.isObject(testRetries)) {
+        return testRetries[this.config('isInteractive') ? 'openMode' : 'runMode']
+      }
+
+      return null
+    }
 
     this.Cookies = $Cookies.create(config.namespace, d)
 
@@ -173,6 +160,10 @@ class $Cypress {
   initialize ({ $autIframe, onSpecReady }) {
     this.$autIframe = $autIframe
     this.onSpecReady = onSpecReady
+    if (this._onInitialize) {
+      this._onInitialize()
+      this._onInitialize = undefined
+    }
   }
 
   run (fn) {
@@ -181,6 +172,21 @@ class $Cypress {
     }
 
     return this.runner.run(fn)
+  }
+
+  // Method to manually re-execute Runner (usually within $autIframe)
+  // used mainly by Component Testing
+  restartRunner () {
+    if (!window.top.Cypress) {
+      throw Error('Cannot re-run spec without Cypress')
+    }
+
+    // MobX state is only available on the Runner instance
+    // which is attached to the top level `window`
+    // We avoid infinite restart loop by checking if not in a loading state.
+    if (!window.top.Runner.state.isLoading) {
+      window.top.Runner.emit('restart')
+    }
   }
 
   // onSpecWindow is called as the spec window
@@ -200,6 +206,7 @@ class $Cypress {
     this.log = $Log.create(this, this.cy, this.state, this.config)
     this.mocha = $Mocha.create(specWindow, this, this.config)
     this.runner = $Runner.create(specWindow, this.mocha, this, this.cy)
+    this.downloads = $Downloads.create(this)
 
     // wire up command create to cy
     this.Commands = $Commands.create(this, this.cy, this.state, this.config)
@@ -213,6 +220,17 @@ class $Cypress {
       err = $errUtils.createUncaughtException('spec', err)
 
       this.runner.onScriptError(err)
+    })
+    .then(() => {
+      return (new Promise((resolve) => {
+        if (this.$autIframe) {
+          resolve()
+        } else {
+          // block initialization if the iframe has not been created yet
+          // Used in CT when async chunks for plugins take their time to download/parse
+          this._onInitialize = resolve
+        }
+      }))
     })
     .then(() => {
       this.cy.initialize(this.$autIframe)
@@ -268,11 +286,6 @@ class $Cypress {
 
         break
 
-      case 'runner:set:runnable':
-        // when there is a hook / test (runnable) that
-        // is about to be invoked
-        return this.cy.setRunnable(...args)
-
       case 'runner:suite:start':
         // mocha runner started processing a suite
         if (this.config('isTextTerminal')) {
@@ -322,6 +335,8 @@ class $Cypress {
 
       case 'runner:pass':
         // mocha runner calculated a pass
+        // this is delayed from when mocha would normally fire it
+        // since we fire it after all afterEach hooks have ran
         if (this.config('isTextTerminal')) {
           return this.emit('mocha', 'pass', ...args)
         }
@@ -337,23 +352,18 @@ class $Cypress {
         break
 
       case 'runner:fail': {
-        // mocha runner calculated a failure
-        const err = args[0].err
-
-        if (err.type === 'existence' || $dom.isDom(err.actual) || $dom.isDom(err.expected)) {
-          err.showDiff = false
-        }
-
-        if (err.actual) {
-          err.actual = chai.util.inspect(err.actual)
-        }
-
-        if (err.expected) {
-          err.expected = chai.util.inspect(err.expected)
-        }
-
         if (this.config('isTextTerminal')) {
           return this.emit('mocha', 'fail', ...args)
+        }
+
+        break
+      }
+      // retry event only fired in mocha version 6+
+      // https://github.com/mochajs/mocha/commit/2a76dd7589e4a1ed14dd2a33ab89f182e4c4a050
+      case 'runner:retry': {
+        // mocha runner calculated a pass
+        if (this.config('isTextTerminal')) {
+          this.emit('mocha', 'retry', ...args)
         }
 
         break
@@ -366,7 +376,14 @@ class $Cypress {
         // get back to a clean slate
         this.cy.reset(...args)
 
-        return this.emit('test:before:run', ...args)
+        if (this.config('isTextTerminal')) {
+          // needed for handling test retries
+          this.emit('mocha', 'test:before:run', args[0])
+        }
+
+        this.emit('test:before:run', ...args)
+
+        break
 
       case 'runner:test:before:run:async':
         // TODO: handle timeouts here? or in the runner?
@@ -556,22 +573,15 @@ class $Cypress {
   }
 
   stop () {
+    if (!this.runner) {
+      // the tests have been reloaded
+      return
+    }
+
     this.runner.stop()
     this.cy.stop()
 
     return this.action('cypress:stop')
-  }
-
-  addChildCommand (key) {
-    return throwDeprecatedCommandInterface(key, 'addChildCommand')
-  }
-
-  addParentCommand (key) {
-    return throwDeprecatedCommandInterface(key, 'addParentCommand')
-  }
-
-  addDualCommand (key) {
-    return throwDeprecatedCommandInterface(key, 'addDualCommand')
   }
 
   addAssertionCommand () {
@@ -585,6 +595,28 @@ class $Cypress {
   static create (config) {
     return new $Cypress(config)
   }
+}
+
+function wrapMoment (moment) {
+  function deprecatedFunction (...args) {
+    $errUtils.warnByPath('moment.deprecated')
+
+    return moment.apply(moment, args)
+  }
+  // copy all existing properties from "moment" like "moment.duration"
+  _.keys(moment).forEach((key) => {
+    const value = moment[key]
+
+    if (_.isFunction(value)) {
+      // recursively wrap any property that can be called by the user
+      // so that Cypress.moment.duration() shows deprecated message
+      deprecatedFunction[key] = wrapMoment(value)
+    } else {
+      deprecatedFunction[key] = value
+    }
+  })
+
+  return deprecatedFunction
 }
 
 // attach to $Cypress to access
@@ -612,7 +644,7 @@ $Cypress.prototype.Screenshot = $Screenshot
 $Cypress.prototype.SelectorPlayground = $SelectorPlayground
 $Cypress.prototype.utils = $utils
 $Cypress.prototype._ = _
-$Cypress.prototype.moment = moment
+$Cypress.prototype.moment = wrapMoment(moment)
 $Cypress.prototype.Blob = blobUtil
 $Cypress.prototype.Promise = Promise
 $Cypress.prototype.minimatch = minimatch

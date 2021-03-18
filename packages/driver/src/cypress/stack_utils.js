@@ -1,45 +1,19 @@
-const _ = require('lodash')
-const { codeFrameColumns } = require('@babel/code-frame')
-const errorStackParser = require('error-stack-parser')
-const path = require('path')
+// See: ./errorScenarios.md for details about error messages and stack traces
 
-const $sourceMapUtils = require('./source_map_utils')
+const _ = require('lodash')
+const path = require('path')
+const errorStackParser = require('error-stack-parser')
+const { codeFrameColumns } = require('@babel/code-frame')
+
 const $utils = require('./utils')
+const $sourceMapUtils = require('./source_map_utils')
+const { getStackLines, replacedStack, stackWithoutMessage, splitStack, unsplitStack } = require('@packages/server/lib/util/stack_utils')
 
 const whitespaceRegex = /^(\s*)*/
 const stackLineRegex = /^\s*(at )?.*@?\(?.*\:\d+\:\d+\)?$/
 const customProtocolRegex = /^[^:\/]+:\/+/
+const percentNotEncodedRegex = /%(?![0-9A-F][0-9A-F])/g
 const STACK_REPLACEMENT_MARKER = '__stackReplacementMarker'
-
-// returns tuple of [message, stack]
-const splitStack = (stack) => {
-  const lines = stack.split('\n')
-
-  return _.reduce(lines, (memo, line) => {
-    if (memo.messageEnded || stackLineRegex.test(line)) {
-      memo.messageEnded = true
-      memo[1].push(line)
-    } else {
-      memo[0].push(line)
-    }
-
-    return memo
-  }, [[], []])
-}
-
-const unsplitStack = (messageLines, stackLines) => {
-  return _.castArray(messageLines).concat(stackLines).join('\n')
-}
-
-const getStackLines = (stack) => {
-  const [, stackLines] = splitStack(stack)
-
-  return stackLines
-}
-
-const stackWithoutMessage = (stack) => {
-  return getStackLines(stack).join('\n')
-}
 
 const hasCrossFrameStacks = (specWindow) => {
   // get rid of the top lines since they naturally have different line:column
@@ -75,15 +49,14 @@ const stackWithLinesRemoved = (stack, cb) => {
   return unsplitStack(messageLines, remainingStackLines)
 }
 
-const stackWithLinesDroppedFromMarker = (stack, marker) => {
+const stackWithLinesDroppedFromMarker = (stack, marker, includeLast = false) => {
   return stackWithLinesRemoved(stack, (lines) => {
     // drop lines above the marker
     const withAboveMarkerRemoved = _.dropWhile(lines, (line) => {
       return !_.includes(line, marker)
     })
 
-    // remove the first line because it includes the marker
-    return withAboveMarkerRemoved.slice(1)
+    return includeLast ? withAboveMarkerRemoved : withAboveMarkerRemoved.slice(1)
   })
 }
 
@@ -140,6 +113,24 @@ const getCodeFrameFromSource = (sourceCode, { line, column, relativeFile, absolu
   }
 }
 
+const captureUserInvocationStack = (ErrorConstructor, userInvocationStack) => {
+  if (!userInvocationStack) {
+    const newErr = new ErrorConstructor('userInvocationStack')
+
+    // if browser natively supports Error.captureStackTrace, use it (chrome) (must be bound)
+    // otherwise use our polyfill on top.Error
+    const captureStackTrace = ErrorConstructor.captureStackTrace ? ErrorConstructor.captureStackTrace.bind(ErrorConstructor) : Error.captureStackTrace
+
+    captureStackTrace(newErr, captureUserInvocationStack)
+
+    userInvocationStack = newErr.stack
+  }
+
+  userInvocationStack = normalizedUserInvocationStack(userInvocationStack)
+
+  return userInvocationStack
+}
+
 const getCodeFrameStackLine = (err, stackIndex) => {
   // if a specific index is not specified, use the first line with a file in it
   if (stackIndex == null) return _.find(err.parsedStack, (line) => !!line.fileUrl)
@@ -167,6 +158,24 @@ const getWhitespace = (line) => {
   return whitespace || ''
 }
 
+const decodeSpecialChars = (filePath) => {
+  // the source map will encode certain characters like spaces and emojis
+  // but characters like &%#^% are not encoded
+  // because % is not encoded we must encode it manually before trying to decode
+  // or else decodeURIComponent will throw an error
+  //
+  // however if a filename has something like %20 in it we have no way of telling
+  // if that's the actual filename or an encoded space so we'll assume that its encoded
+  // since that's far more likely and to fix this issue
+  // we would have to patch the source-map library which likely isn't worth it
+
+  if (filePath) {
+    return decodeURIComponent(filePath.replace(percentNotEncodedRegex, '%25'))
+  }
+
+  return filePath
+}
+
 const getSourceDetails = (generatedDetails) => {
   const sourceDetails = $sourceMapUtils.getSourcePosition(generatedDetails.file, generatedDetails)
 
@@ -178,7 +187,7 @@ const getSourceDetails = (generatedDetails) => {
   return {
     line,
     column,
-    file,
+    file: decodeSpecialChars(file),
     function: fn,
   }
 }
@@ -209,6 +218,20 @@ const parseLine = (line) => {
 }
 
 const stripCustomProtocol = (filePath) => {
+  if (!filePath) {
+    return
+  }
+
+  // if the file path (after all said and done)
+  // still starts with "http://" or "https://" then
+  // it is an URL and we have no idea how it maps
+  // to a physical file location on disk. Let it be.
+  const httpProtocolRegex = /^https?:\/\//
+
+  if (httpProtocolRegex.test(filePath)) {
+    return
+  }
+
   return filePath.replace(customProtocolRegex, '')
 }
 
@@ -225,7 +248,9 @@ const getSourceDetailsForLine = (projectRoot, line) => {
   }
 
   const sourceDetails = getSourceDetails(generatedDetails)
+
   const originalFile = sourceDetails.file
+
   const relativeFile = stripCustomProtocol(originalFile)
 
   return {
@@ -233,7 +258,7 @@ const getSourceDetailsForLine = (projectRoot, line) => {
     fileUrl: generatedDetails.file,
     originalFile,
     relativeFile,
-    absoluteFile: path.join(projectRoot, relativeFile),
+    absoluteFile: relativeFile ? path.join(projectRoot, relativeFile) : undefined,
     line: sourceDetails.line,
     // adding 1 to column makes more sense for code frame and opening in editor
     column: sourceDetails.column + 1,
@@ -317,21 +342,15 @@ const normalizedUserInvocationStack = (userInvocationStack) => {
   // whereas Chromium browsers have the user's line first
   const stackLines = getStackLines(userInvocationStack)
   const winnowedStackLines = _.reject(stackLines, (line) => {
+    // WARNING: STACK TRACE WILL BE DIFFERENT IN DEVELOPMENT vs PRODUCTOIN
+    // stacks in development builds look like:
+    //     at cypressErr (cypress:///../driver/src/cypress/error_utils.js:259:17)
+    // stacks in prod builds look like:
+    //     at cypressErr (http://localhost:3500/isolated-runner/cypress_runner.js:173123:17)
     return line.includes('cy[name]') || line.includes('Chainer.prototype[key]')
   }).join('\n')
 
   return normalizeStackIndentation(winnowedStackLines)
-}
-
-const replacedStack = (err, newStack) => {
-  // if err already lacks a stack or we've removed the stack
-  // for some reason, keep it stackless
-  if (!err.stack) return err.stack
-
-  const errString = err.toString()
-  const stackLines = getStackLines(newStack)
-
-  return unsplitStack(errString, stackLines)
 }
 
 module.exports = {
@@ -348,4 +367,5 @@ module.exports = {
   stackWithoutMessage,
   stackWithReplacementMarkerLineRemoved,
   stackWithUserInvocationStackSpliced,
+  captureUserInvocationStack,
 }

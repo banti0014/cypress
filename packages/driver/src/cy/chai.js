@@ -265,7 +265,7 @@ chai.use((chai, u) => {
       return (function (text) {
         let obj = this._obj
 
-        if (!($dom.isJquery(obj) || $dom.isElement(obj))) {
+        if (!($dom.isElement(obj))) {
           return _super.apply(this, arguments)
         }
 
@@ -341,9 +341,12 @@ chai.use((chai, u) => {
                 return `Not enough elements found. Found '${len1}', expected '${len2}'.`
               }
 
-              const newMessage = getLongLengthMessage(obj.length, length)
+              // if the user has specified a custom message,
+              // for example: expect($subject, 'Should have length').to.have.length(1)
+              // prefer that over our message
+              const message = chaiUtils.flag(this, 'message') ? e1.message : getLongLengthMessage(obj.length, length)
 
-              $errUtils.modifyErrMsg(e1, newMessage, () => newMessage)
+              $errUtils.modifyErrMsg(e1, message, () => message)
 
               throw e1
             }
@@ -416,8 +419,6 @@ chai.use((chai, u) => {
   }
 
   const captureUserInvocationStack = (specWindow, state, ssfi) => {
-    let userInvocationStack
-
     // we need a user invocation stack with the top line being the point where
     // the error occurred for the sake of the code frame
     // in chrome, stack lines from another frame don't appear in the
@@ -426,13 +427,9 @@ chai.use((chai, u) => {
     // because it doesn't have lines from the spec iframe)
     // in firefox, specWindow.Error has too many extra lines at the
     // beginning, but chai.AssertionError helps us winnow those down
-    if ($stackUtils.hasCrossFrameStacks(specWindow)) {
-      userInvocationStack = (new chai.AssertionError('uis', {}, ssfi)).stack
-    } else {
-      userInvocationStack = (new specWindow.Error()).stack
-    }
+    const chaiInvocationStack = $stackUtils.hasCrossFrameStacks(specWindow) && (new chai.AssertionError('uis', {}, ssfi)).stack
 
-    userInvocationStack = $stackUtils.normalizedUserInvocationStack(userInvocationStack)
+    const userInvocationStack = $stackUtils.captureUserInvocationStack(specWindow.Error, chaiInvocationStack)
 
     state('currentAssertionUserInvocationStack', userInvocationStack)
   }

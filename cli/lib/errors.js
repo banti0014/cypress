@@ -73,6 +73,8 @@ const binaryNotExecutable = (executable) => {
     - the cypress npm package as 'root' or with 'sudo'
 
     Please check that you have the appropriate user permissions.
+
+    You can also try clearing the cache with 'cypress cache clear' and reinstalling. 
   `,
   }
 }
@@ -227,29 +229,6 @@ const childProcessKilled = (eventName, signal) => {
     description: `The Test Runner unexpectedly exited via a ${chalk.cyan(eventName)} event with signal ${chalk.cyan(signal)}`,
     solution: solutionUnknown,
   }
-}
-
-const removed = {
-  CYPRESS_BINARY_VERSION: {
-    description: stripIndent`
-    The environment variable CYPRESS_BINARY_VERSION has been renamed to CYPRESS_INSTALL_BINARY as of version ${chalk.green(
-    '3.0.0',
-  )}
-    `,
-    solution: stripIndent`
-    You should set CYPRESS_INSTALL_BINARY instead.
-    `,
-  },
-  CYPRESS_SKIP_BINARY_INSTALL: {
-    description: stripIndent`
-    The environment variable CYPRESS_SKIP_BINARY_INSTALL has been removed as of version ${chalk.green(
-    '3.0.0',
-  )}
-    `,
-    solution: stripIndent`
-      To skip the binary install, set CYPRESS_INSTALL_BINARY=0
-    `,
-  },
 }
 
 const CYPRESS_RUN_BINARY = {
@@ -423,7 +402,6 @@ module.exports = {
     failedUnzip,
     invalidCypressEnv,
     invalidCacheDirectory,
-    removed,
     CYPRESS_RUN_BINARY,
     smokeTestFailure,
     childProcessKilled,

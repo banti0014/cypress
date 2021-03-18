@@ -2,12 +2,14 @@ branches:
   only:
     - master
     - develop
+    - sem-next-ver
     - /win*/
+    - feature/cross-platform-wizard
 
 # https://www.appveyor.com/docs/lang/nodejs-iojs/
 environment:
   # use matching version of Node.js
-  nodejs_version: "12.8.1"
+  nodejs_version: "12.18.3"
   # encode secure variables which will NOT be used
   # in pull requests
   # https://www.appveyor.com/docs/build-configuration/#secure-variables
@@ -53,7 +55,6 @@ install:
   - node --version
   - node --print process.arch
   - yarn --version
-  - yarn check-next-dev-version
   # prints all public variables relevant to the build
   - print-env Platform
   - yarn check-node-version
@@ -65,6 +66,7 @@ install:
   # clean cache to prevent install permission issues
   - yarn cache clean
   - yarn --frozen-lockfile || yarn --frozen-lockfile || yarn --frozen-lockfile
+  - yarn build-prod
   - .\node_modules\.bin\print-arch
 
 # Post-install test scripts.
@@ -77,18 +79,13 @@ test_script:
   - echo *** System info ***
   - node cli/bin/cypress info --dev
 
-  - echo *** Kitchensink tests run on Chrome browser ***
-  - npm run dev -- --run-project %CD%/packages/example --browser chrome
-  - echo *** Kitchensink tests run on Edge browser ***
-  - npm run dev -- --run-project %CD%/packages/example --browser edge
-
   # make sure mocha runs
   - yarn test-mocha
   # make sure our snapshots are compared correctly
   # - npm run test-mocha-snapshot
   # the other larger tests
-  - echo *** Building Windows NPM package %NEXT_DEV_VERSION% ***
-  - npm --no-git-tag-version version %NEXT_DEV_VERSION%
+  - echo *** Building Windows NPM package ***
+  - yarn get-next-version --npm
   - cd cli
   - yarn
   - yarn build

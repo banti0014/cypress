@@ -1,6 +1,5 @@
 require('../../spec_helper')
 
-const resolve = require('resolve')
 const Fixtures = require('../../support/helpers/fixtures')
 const path = require('path')
 const appData = require(`${root}../lib/util/app_data`)
@@ -83,34 +82,6 @@ describe('lib/plugins/preprocessor', () => {
       preprocessor.getFile(this.filePath, this.config)
 
       expect(this.plugin).to.be.calledOnce
-    })
-
-    it('uses default preprocessor if none registered', function () {
-      plugins._reset()
-      sinon.stub(plugins, 'register')
-      sinon.stub(plugins, 'execute').returns(() => {})
-      const browserifyFn = function () {}
-      const browserify = sinon.stub().returns(browserifyFn)
-
-      // mock default options
-      browserify.defaultOptions = {
-        browserifyOptions: {
-          extensions: [],
-          transform: [
-            [],
-            ['babelify', {
-              presets: [],
-              extensions: [],
-            }],
-          ],
-        },
-      }
-
-      mockery.registerMock('@cypress/browserify-preprocessor', browserify)
-      preprocessor.getFile(this.filePath, this.config)
-      expect(plugins.register).to.be.calledWith('file:preprocessor', browserifyFn)
-
-      expect(browserify).to.be.called
     })
   })
 
@@ -214,45 +185,9 @@ describe('lib/plugins/preprocessor', () => {
       expect(preprocessor.errorMessage(err)).to.equal('message')
     })
 
-    it('removes stack lines', () => {
-      expect(preprocessor.errorMessage('foo\n  at what.ever (foo 23:30)\n baz\n    at where.ever (bar 1:5)')).to.equal('foo\n baz')
-    })
-  })
-
-  context('#setDefaultPreprocessor', () => {
-    it('finds TypeScript in the project root', function () {
-      const mockPlugin = {}
-
-      sinon.stub(plugins, 'register')
-      sinon.stub(preprocessor, 'createBrowserifyPreprocessor').returns(mockPlugin)
-
-      preprocessor.setDefaultPreprocessor(this.config)
-
-      expect(plugins.register).to.be.calledWithExactly('file:preprocessor', mockPlugin)
-      // in this mock project, the TypeScript should be found
-      // from the monorepo
-      const monorepoRoot = path.join(__dirname, '../../../../..')
-      const typescript = resolve.sync('typescript', {
-        basedir: monorepoRoot,
-      })
-
-      expect(preprocessor.createBrowserifyPreprocessor).to.be.calledWith({ typescript })
-    })
-
-    it('does not have typescript if not found', function () {
-      const mockPlugin = {}
-
-      sinon.stub(plugins, 'register')
-      sinon.stub(preprocessor, 'createBrowserifyPreprocessor').returns(mockPlugin)
-      sinon.stub(resolve, 'sync')
-      .withArgs('typescript', { basedir: this.todosPath })
-      .throws(new Error('TypeScript not found'))
-
-      preprocessor.setDefaultPreprocessor(this.config)
-
-      expect(plugins.register).to.be.calledWithExactly('file:preprocessor', mockPlugin)
-
-      expect(preprocessor.createBrowserifyPreprocessor).to.be.calledWith({ typescript: null })
+    it('does not remove stack lines', () => {
+      expect(preprocessor.errorMessage('foo\n  at what.ever (foo 23:30)\n baz\n    at where.ever (bar 1:5)'))
+      .to.equal('foo\n  at what.ever (foo 23:30)\n baz\n    at where.ever (bar 1:5)')
     })
   })
 })

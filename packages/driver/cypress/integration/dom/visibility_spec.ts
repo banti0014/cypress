@@ -152,10 +152,10 @@ describe('src/cypress/dom/visibility', () => {
       this.$parentVisHidden = add('<div class="invis" style="visibility: hidden;"><button>parent visibility: hidden</button></div>')
       this.$displayNone = add('<button style="display: none">display: none</button>')
       this.$inputHidden = add('<input type="hidden" value="abcdef">')
-      this.$btnOpacity = add('<button style="opacity: 0;">opacity: 0</button>')
       this.$divNoWidth = add('<div style="width: 0; height: 100px;">width: 0</div>')
       this.$divNoHeight = add('<div style="width: 50px; height: 0px;">height: 0</div>')
       this.$divDetached = $('<div>foo</div>')
+      this.$divVisible = add(`<div>visible</div>`)
 
       this.$optionInSelect = add(`\
 <select>
@@ -191,6 +191,20 @@ describe('src/cypress/dom/visibility', () => {
   <option>--Select--</option>
   <option id="hidden-opt" style='display: none'>Sakura</option>
 </select>\
+`)
+
+      this.$btnOpacityZero = add(`\
+<button style="opacity: 0;">opacity: 0</button>\
+`)
+
+      this.$btnOpacityHalf = add(`\
+<button style="opacity: 0.5;">opacity: 0.5</button>\
+`)
+
+      this.$parentOpacityZero = add(`\
+<div style="opacity: 0;">
+  <button>parent opacity: 0</button>
+</div>\
 `)
 
       this.$tableVisCollapse = add(`\
@@ -244,6 +258,12 @@ describe('src/cypress/dom/visibility', () => {
   <button style='position: fixed; top: 0;'>position: fixed</button>
 </div>`)
 
+      this.$childPointerEventsNone = add(`\
+<div style="position: fixed; top: 60px;">
+  <span style="pointer-events: none;">child pointer-events: none</span>
+</div>\
+`)
+
       this.$descendentPosAbs = add(`\
 <div style='width: 0; height: 100px; overflow: hidden;'>
   <div style='height: 500px; width: 500px; position: absolute;'>
@@ -288,6 +308,27 @@ describe('src/cypress/dom/visibility', () => {
       this.$parentDisplayNone = add(`\
 <div id="none" style='display: none;'>
   <span>parent display: none</span>
+</div>\
+`)
+
+      this.$parentPointerEventsNone = add(`\
+<div style="pointer-events: none;">
+  <span style="position: fixed; top: 20px;">parent pointer-events: none</span>
+</div>\
+`)
+
+      this.$parentPointerEventsNoneCovered = add(`\
+<div style="pointer-events: none;">
+  <span style="position: fixed; top: 40px;">parent pointer-events: none</span>
+</div>
+<span style="position: fixed; top: 40px; background: red;">covering the element with pointer-events: none</span>\
+`)
+
+      this.$parentDisplayInlineChildDisplayBlock = add(`\
+<div>
+  <span>
+    <label style="display: block;">display: block</label>
+  </span>
 </div>\
 `)
 
@@ -621,16 +662,38 @@ describe('src/cypress/dom/visibility', () => {
       })
     })
 
-    describe('opacity visible', () => {
-      it('is visible if opacity is 0', function () {
-        expect(this.$btnOpacity.is(':hidden')).to.be.false
-        expect(this.$btnOpacity.is(':visible')).to.be.true
+    describe('css opacity', () => {
+      it('is hidden if opacity is 0', function () {
+        expect(this.$btnOpacityZero.is(':hidden')).to.be.true
+        expect(this.$btnOpacityZero.is(':visible')).to.be.false
 
-        expect(this.$btnOpacity).not.to.be.hidden
-        expect(this.$btnOpacity).to.be.visible
+        expect(this.$btnOpacityZero).to.be.hidden
+        expect(this.$btnOpacityZero).not.to.be.visible
 
-        cy.wrap(this.$btnOpacity).should('not.be.hidden')
-        cy.wrap(this.$btnOpacity).should('be.visible')
+        cy.wrap(this.$btnOpacityZero).should('be.hidden')
+        cy.wrap(this.$btnOpacityZero).should('not.be.visible')
+      })
+
+      it('is hidden if parent has `opacity: 0`', function () {
+        expect(this.$parentOpacityZero.find('button').is(':hidden')).to.be.true
+        expect(this.$parentOpacityZero.find('button').is(':visible')).to.be.false
+
+        expect(this.$parentOpacityZero.find('button')).to.be.hidden
+        expect(this.$parentOpacityZero.find('button')).not.to.be.visible
+
+        cy.wrap(this.$parentOpacityZero.find('button')).should('be.hidden')
+        cy.wrap(this.$parentOpacityZero.find('button')).should('not.be.visible')
+      })
+
+      it('is visible if opacity is greater than 0 but less than 1', function () {
+        expect(this.$btnOpacityHalf.is(':visible')).to.be.true
+        expect(this.$btnOpacityHalf.is(':hidden')).to.be.false
+
+        expect(this.$btnOpacityHalf).to.be.visible
+        expect(this.$btnOpacityHalf).not.to.be.hidden
+
+        cy.wrap(this.$btnOpacityHalf).should('be.visible')
+        cy.wrap(this.$btnOpacityHalf).should('not.be.hidden')
       })
     })
 
@@ -688,7 +751,7 @@ describe('src/cypress/dom/visibility', () => {
         expect(this.$coveredUpPosFixed.find('#coveredUpPosFixed')).not.to.be.visible
       })
 
-      it('is hidden if position: fixed and off screent', function () {
+      it('is hidden if position: fixed and off screen', function () {
         expect(this.$offScreenPosFixed).to.be.hidden
         expect(this.$offScreenPosFixed).not.to.be.visible
       })
@@ -701,6 +764,29 @@ describe('src/cypress/dom/visibility', () => {
       it('is hidden if only the parent has position absolute', function () {
         expect(this.$parentPosAbs.find('span')).to.be.hidden
         expect(this.$parentPosAbs.find('span')).to.not.be.visible
+      })
+
+      it('is visible if position: fixed and parent has pointer-events: none', function () {
+        expect(this.$parentPointerEventsNone.find('span')).to.be.visible
+        expect(this.$parentPointerEventsNone.find('span')).to.not.be.hidden
+      })
+
+      it('is not visible if covered when position: fixed and parent has pointer-events: none', function () {
+        expect(this.$parentPointerEventsNoneCovered.find('span')).to.be.hidden
+        expect(this.$parentPointerEventsNoneCovered.find('span')).to.not.be.visible
+      })
+
+      it('is visible if pointer-events: none and parent has position: fixed', function () {
+        expect(this.$childPointerEventsNone.find('span')).to.be.visible
+        expect(this.$childPointerEventsNone.find('span')).to.not.be.hidden
+      })
+    })
+
+    describe('css display', function () {
+      // https://github.com/cypress-io/cypress/issues/6183
+      it('parent is visible if display inline and child has display block', function () {
+        expect(this.$parentDisplayInlineChildDisplayBlock.find('span')).to.be.visible
+        expect(this.$parentDisplayInlineChildDisplayBlock.find('span')).to.not.be.hidden
       })
     })
 
@@ -1016,6 +1102,14 @@ describe('src/cypress/dom/visibility', () => {
         this.reasonIs(this.$tableVisCollapse.find('tr.collapse td:first'), 'This element `<td>` is not visible because its parent `<tr.collapse>` has CSS property: `visibility: collapse`')
       })
 
+      it('has `opacity: 0`', function () {
+        this.reasonIs(this.$btnOpacityZero, 'This element `<button>` is not visible because it has CSS property: `opacity: 0`')
+      })
+
+      it('has parent with `opacity: 0`', function () {
+        this.reasonIs(this.$parentOpacityZero.find('button'), 'This element `<button>` is not visible because its parent `<div>` has CSS property: `opacity: 0`')
+      })
+
       it('is detached from the DOM', function () {
         this.reasonIs(this.$divDetached, 'This element `<div>` is not visible because it is detached from the DOM')
       })
@@ -1067,7 +1161,9 @@ This element \`<div#coveredUpPosFixed>\` is not visible because it has CSS prope
       })
 
       it('cannot determine why element is not visible', function () {
-        this.reasonIs(this.$btnOpacity, 'This element `<button>` is not visible.')
+        // this element is actually visible
+        // but used here as an example that does not match any of the above
+        this.reasonIs(this.$divVisible, 'This element `<div>` is not visible.')
       })
     })
   })

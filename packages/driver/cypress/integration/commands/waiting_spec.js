@@ -51,22 +51,6 @@ describe('src/cy/commands/waiting', () => {
       })
     })
 
-    describe('function argument', () => {
-      describe('errors thrown', () => {
-        it('is deprecated', (done) => {
-          cy.on('fail', (err) => {
-            expect(err.message).to.eq('`cy.wait(fn)` has been deprecated. Change this command to be `cy.should(fn)`.')
-
-            done()
-          })
-
-          cy.get('body').wait(($body) => {
-            expect($body).to.match('body')
-          })
-        })
-      })
-    })
-
     describe('alias argument', () => {
       before(() => {
         cy.visit('/fixtures/jquery.html')
@@ -253,7 +237,7 @@ describe('src/cy/commands/waiting', () => {
       describe('errors', {
         defaultCommandTimeout: 100,
       }, () => {
-        it('throws when alias doesnt match a route', (done) => {
+        it('throws when alias does not match a route (DOM element)', (done) => {
           cy.on('fail', (err) => {
             expect(err.message).to.include('`cy.wait()` only accepts aliases for routes.\nThe alias: `b` did not match a route.')
             expect(err.docsUrl).to.eq('https://on.cypress.io/wait')
@@ -262,6 +246,17 @@ describe('src/cy/commands/waiting', () => {
           })
 
           cy.get('body').as('b').wait('@b')
+        })
+
+        it('throws when alias does not match a route (wrapped value)', (done) => {
+          cy.on('fail', (err) => {
+            expect(err.message).to.include('`cy.wait()` only accepts aliases for routes.\nThe alias: `b` did not match a route.')
+            expect(err.docsUrl).to.eq('https://on.cypress.io/wait')
+
+            done()
+          })
+
+          cy.wrap('my value').as('b').wait('@b')
         })
 
         it('throws when route is never resolved', {
@@ -852,6 +847,7 @@ describe('src/cy/commands/waiting', () => {
           { type: 'Boolean', val: true },
           { type: 'Object', val: {} },
           { type: 'Symbol', val: Symbol.iterator, errVal: 'Symbol(Symbol.iterator)' },
+          { type: 'Function', val: () => {}, errVal: 'undefined' },
         ], (attrs) => {
           it(`throws when 1st arg is ${attrs.type}`, (done) => {
             cy.on('fail', (err) => {
@@ -1121,6 +1117,103 @@ describe('src/cy/commands/waiting', () => {
               Yielded: [xhrs[0], xhrs[1]], // explictly create the array here
             })
           })
+        })
+      })
+
+      describe('timeouts', function () {
+        it('sets default requestTimeout', {
+          requestTimeout: 199,
+        }, function (done) {
+          cy.on('command:retry', () => {
+            expect(this.lastLog.get('timeout')).to.eq(199)
+
+            done()
+          })
+
+          cy
+          .server()
+          .route('GET', '*', {}).as('fetch')
+          .wait('@fetch')
+        })
+
+        it('sets custom requestTimeout', function (done) {
+          cy.on('command:retry', () => {
+            expect(this.lastLog.get('timeout')).to.eq(199)
+
+            done()
+          })
+
+          cy
+          .server()
+          .route('GET', '*', {}).as('fetch')
+          .wait('@fetch', { requestTimeout: 199 })
+        })
+
+        it('sets default responseTimeout', {
+          responseTimeout: 299,
+        }, function (done) {
+          cy.on('command:retry', () => {
+            expect(this.lastLog.get('timeout')).to.eq(299)
+
+            done()
+          })
+
+          cy
+          .server({ delay: 100 })
+          .route('GET', '*', {}).as('fetch')
+          .window().then((win) => {
+            xhrGet(win, '/foo')
+
+            return null
+          })
+          .wait('@fetch')
+        })
+
+        it('sets custom responseTimeout', function (done) {
+          cy.on('command:retry', () => {
+            expect(this.lastLog.get('timeout')).to.eq(299)
+
+            done()
+          })
+
+          cy
+          .server({ delay: 100 })
+          .route('GET', '*', {}).as('fetch')
+          .window().then((win) => {
+            xhrGet(win, '/foo')
+
+            return null
+          })
+          .wait('@fetch', { responseTimeout: 299 })
+        })
+
+        it('updates to requestTimeout and responseTimeout at the proper times', function (done) {
+          let log
+          let retryCount = 0
+
+          cy.on('command:retry', () => {
+            log = log || this.lastLog
+            retryCount++
+            if (retryCount === 1) {
+              expect(log.get('timeout')).to.eq(100)
+
+              // trigger request to move onto response timeout verification
+              const win = cy.state('window')
+
+              xhrGet(win, '/foo')
+            }
+
+            if (retryCount === 2) {
+              expect(log.get('timeout')).to.eq(299)
+
+              done()
+            }
+          })
+
+          cy
+          .server({ delay: 100 })
+          .route('GET', '*', {}).as('fetch')
+          .wait('@fetch', { requestTimeout: 100, responseTimeout: 299 })
         })
       })
     })

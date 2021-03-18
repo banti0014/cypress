@@ -1,6 +1,7 @@
 const _ = require('lodash')
 const { stripIndent } = require('common-tags')
 const capitalize = require('underscore.string/capitalize')
+const { normalizedStack } = require('./stack_utils')
 
 const divider = (num, char) => {
   return Array(num).join(char)
@@ -103,10 +104,6 @@ const cyStripIndent = (str, indentSize) => {
 module.exports = {
   add: {
     type_missing: '`Cypress.add(key, fn, type)` must include a type!',
-  },
-
-  agents: {
-    deprecated_warning: `${cmd('agents')} is deprecated. Use ${cmd('stub')} and ${cmd('spy')} instead.`,
   },
 
   alias: {
@@ -288,18 +285,10 @@ module.exports = {
         docsUrl: `https://on.cypress.io/${_.toLower(obj.cmd)}`,
       }
     },
-    removed_method: {
-      message: stripIndent`\
-        The \`Cypress.Cookies.{{method}}()\` method has been removed.
-
-        Setting, getting, and clearing cookies is now an asynchronous operation.
-
-        Replace this call with the appropriate command such as:
-          - \`cy.getCookie()\`
-          - \`cy.getCookies()\`
-          - \`cy.setCookie()\`
-          - \`cy.clearCookie()\`
-          - \`cy.clearCookies()\``,
+    whitelist_renamed (obj) {
+      return {
+        message: `\`${obj.type}\` \`whitelist\` option has been renamed to \`preserve\`. Please rename \`whitelist\` to \`preserve\`.`,
+      }
     },
   },
 
@@ -368,11 +357,15 @@ module.exports = {
       message: 'Invalid position argument: `{{position}}`. Position may only be {{validPositions}}.',
       docsUrl: 'https://on.cypress.io/element-cannot-be-interacted-with',
     },
-    not_scrollable: [
-      `${cmd('{{cmd}}')} failed because this element is not scrollable:`,
-      '`{{node}}\`',
-      '',
-    ].join('\n'),
+    not_scrollable: {
+      message: stripIndent`\
+        ${cmd('{{cmd}}')} failed because this element is not scrollable:
+
+        \`{{node}}\`
+
+        Make sure you're targeting the correct element or use \`{ensureScrollable: false}\` to disable the scrollable check.`,
+      docsUrl: 'https://on.cypress.io/scrollto',
+    },
     not_visible: {
       message: stripIndent`\
         ${cmd('{{cmd}}')} failed because this element is not visible:
@@ -684,23 +677,6 @@ module.exports = {
   },
 
   miscellaneous: {
-    custom_command_interface_changed (obj) {
-      return {
-        message: stripIndent`\
-          Cypress.${obj.method}(...) has been removed and replaced by:
-
-          \`Cypress.Commands.add(...)\`
-
-          Instead of indicating \`parent\`, \`child\`, or \`dual\` commands, you pass an \`options\` object
-          to describe the requirements around the previous subject. You can also enforce specific
-          subject types such as requiring the subject to be a DOM element.
-
-          To rewrite this custom command you'd likely write:
-
-          \`Cypress.Commands.add(${obj.signature})\``,
-        docsUrl: 'https://on.cypress.io/custom-command-interface-changed',
-      }
-    },
     returned_value_and_commands_from_custom_command (obj) {
       return {
         message: stripIndent`\
@@ -712,13 +688,15 @@ module.exports = {
 
           The return value was:
 
-            > ${obj.returned}
+            > {{returned}}
 
           Because cy commands are asynchronous and are queued to be run later, it doesn't make sense to return anything else.
 
           For convenience, you can also simply omit any return value or return \`undefined\` and Cypress will not error.
 
-          In previous versions of Cypress we automatically detected this and forced the cy commands to be returned. To make things less magical and clearer, we are now throwing an error.`,
+          In previous versions of Cypress we automatically detected this and forced the cy commands to be returned. To make things less magical and clearer, we are now throwing an error.`
+        // since obj.returned can be multi-lined, it can mess up stripIndent, so we replace it after
+        .replace('{{returned}}', obj.returned),
         docsUrl: 'https://on.cypress.io/returning-value-and-commands-in-custom-command',
       }
     },
@@ -729,13 +707,15 @@ module.exports = {
 
           The return value was:
 
-            > ${obj.returned}
+          > {{returned}}
 
           Because cy commands are asynchronous and are queued to be run later, it doesn't make sense to return anything else.
 
           For convenience, you can also simply omit any return value or return \`undefined\` and Cypress will not error.
 
-          In previous versions of Cypress we automatically detected this and forced the cy commands to be returned. To make things less magical and clearer, we are now throwing an error.`,
+          In previous versions of Cypress we automatically detected this and forced the cy commands to be returned. To make things less magical and clearer, we are now throwing an error.`
+        // since obj.returned can be multi-lined, it can mess up stripIndent, so we replace it after
+        .replace('{{returned}}', obj.returned),
         docsUrl: 'https://on.cypress.io/returning-value-and-commands-in-test',
       }
     },
@@ -775,10 +755,6 @@ module.exports = {
         docsUrl: 'https://on.cypress.io/returning-promise-and-commands-in-test',
       }
     },
-    command_log_renamed: stripIndent`\
-      \`Cypress.Log.command()\` has been renamed to \`Cypress.log()\`
-
-      Please update your code. You should be able to safely do a find/replace.`,
     dangling_commands: {
       message: stripIndent`\
         Oops, Cypress detected something wrong with your test code.
@@ -844,13 +820,9 @@ module.exports = {
       docsUrl: 'https://on.cypress.io/cannot-execute-commands-outside-test',
     },
     private_custom_command_interface: 'You cannot use the undocumented private command interface: `{{method}}`',
-    private_property: stripIndent`\
-      You are accessing a private property directly on \`cy\` which has been renamed.
-
-      This was never documented nor supported.
-
-      Please go through the public function: ${cmd('state', '...')}`,
-    retry_timed_out: 'Timed out retrying: ',
+    retry_timed_out ({ ms }) {
+      return `Timed out retrying after ${ms}ms: `
+    },
   },
 
   mocha: {
@@ -866,6 +838,42 @@ module.exports = {
         {{error}}`,
       docsUrl: 'https://on.cypress.io/returning-promise-and-invoking-done-callback',
     },
+    manually_set_retries_test: stripIndent`\
+    Mocha \`this.retries()\` syntax is not supported.
+
+    To configure retries use the following syntax:
+
+    \`\`\`
+    it('{{title}}', { retries: {{numRetries}} }, () => {
+      ...
+    })
+    \`\`\`
+
+    https://on.cypress.io/test-retries
+    `,
+    manually_set_retries_suite: stripIndent`\
+    Mocha \`this.retries()\` syntax is not supported.
+
+    To configure retries use the following syntax:
+
+    \`\`\`
+    describe('{{title}}', { retries: {{numRetries}} }, () => {
+      ...
+    })
+    \`\`\`
+
+    https://on.cypress.io/test-retries
+    `,
+    hook_registered_late: stripIndent`\
+    Cypress detected you registered a(n) \`{{hookTitle}}\` hook while a test was running (possibly a hook nested inside another hook). All hooks must be registered before a test begins executing.
+
+    Move the \`{{hookTitle}}\` into a suite callback or the global scope.
+    `,
+
+  },
+
+  moment: {
+    deprecated: `\`Cypress.moment\` has been deprecated and will be removed in a future release. Consider migrating to a different datetime formatter.`,
   },
 
   navigation: {
@@ -903,6 +911,114 @@ module.exports = {
         Browsers will not fire the \`load\` event until all stylesheets and scripts are done downloading.
 
         When this \`load\` event occurs, Cypress will continue running commands.`
+    },
+  },
+
+  net_stubbing: {
+    route2_renamed: `${cmd('route2')} was renamed to ${cmd('intercept')} and will be removed in a future release. Please update usages of ${cmd('route2')} to use ${cmd('intercept')} instead.`,
+    invalid_static_response: ({ cmd, message, staticResponse }) => {
+      return cyStripIndent(`\
+        An invalid StaticResponse was supplied to \`${cmd}()\`. ${message}
+
+        You passed: ${format(staticResponse)}`, 8)
+    },
+    intercept: {
+      invalid_handler: ({ handler }) => {
+        return stripIndent`\
+          ${cmd('intercept')}'s \`handler\` argument must be a String, StaticResponse, or HttpController function.
+
+          You passed: ${format(handler)}`
+      },
+      invalid_route_matcher: ({ message, matcher }) => {
+        return stripIndent`\
+          An invalid RouteMatcher was supplied to ${cmd('intercept')}. ${message}
+
+          You passed: ${format(matcher)}`
+      },
+    },
+    request_handling: {
+      cb_failed: ({ err, req, route }) => {
+        return cyStripIndent(`\
+          A request callback passed to ${cmd('intercept')} threw an error while intercepting a request:
+
+          ${err.message}
+
+          Route: ${format(route)}
+
+          Intercepted request: ${format(req)}`, 10)
+      },
+      cb_timeout: ({ timeout, req, route }) => {
+        return cyStripIndent(`\
+          A request callback passed to ${cmd('intercept')} timed out after returning a Promise that took more than the \`defaultCommandTimeout\` of \`${timeout}ms\` to resolve.
+
+          If the request callback is expected to take longer than \`${timeout}ms\`, increase the configured \`defaultCommandTimeout\` value.
+
+          Route: ${format(route)}
+
+          Intercepted request: ${format(req)}`, 10)
+      },
+      multiple_reply_calls: `\`req.reply()\` was called multiple times in a request handler, but a request can only be replied to once.`,
+      reply_called_after_resolved: `\`req.reply()\` was called after the request handler finished executing, but \`req.reply()\` can not be called after the request has been passed on.`,
+    },
+    request_error: {
+      network_error: ({ innerErr, req, route }) => {
+        return cyStripIndent(`\
+          \`req.reply()\` was provided a callback to intercept the upstream response, but a network error occurred while making the request:
+
+          ${normalizedStack(innerErr)}
+
+          Route: ${format(route)}
+
+          Intercepted request: ${format(req)}`, 10)
+      },
+      timeout: ({ innerErr, req, route }) => {
+        return cyStripIndent(`\
+          \`req.reply()\` was provided a callback to intercept the upstream response, but the request timed out after the \`responseTimeout\` of \`${req.responseTimeout}ms\`.
+
+          ${normalizedStack(innerErr)}
+
+          Route: ${format(route)}
+
+          Intercepted request: ${format(req)}`, 10)
+      },
+    },
+    response_handling: {
+      cb_failed: ({ err, req, res, route }) => {
+        return cyStripIndent(`\
+          A response callback passed to \`req.reply()\` threw an error while intercepting a response:
+
+          ${err.message}
+
+          Route: ${format(route)}
+
+          Intercepted request: ${format(req)}
+
+          Intercepted response: ${format(res)}`, 10)
+      },
+      cb_timeout: ({ timeout, req, res, route }) => {
+        return cyStripIndent(`\
+          A response callback passed to \`req.reply()\` timed out after returning a Promise that took more than the \`defaultCommandTimeout\` of \`${timeout}ms\` to resolve.
+
+          If the response callback is expected to take longer than \`${timeout}ms\`, increase the configured \`defaultCommandTimeout\` value.
+
+          Route: ${format(route)}
+
+          Intercepted request: ${format(req)}
+
+          Intercepted response: ${format(res)}`, 10)
+      },
+      multiple_send_calls: ({ res }) => {
+        return cyStripIndent(`\
+          \`res.send()\` was called multiple times in a response handler, but the response can only be sent once.
+
+          Response: ${format(res)}`, 10)
+      },
+      send_called_after_resolved: ({ res }) => {
+        return cyStripIndent(`\
+          \`res.send()\` was called after the response handler finished executing, but \`res.send()\` can not be called after the response has been passed on.
+
+          Intercepted response: ${format(res)}`, 10)
+      },
     },
   },
 
@@ -968,10 +1084,6 @@ module.exports = {
     },
     invalid_method: {
       message: `${cmd('request')} was called with an invalid method: \`{{method}}\`. Method can be: \`GET\`, \`POST\`, \`PUT\`, \`DELETE\`, \`PATCH\`, \`HEAD\`, \`OPTIONS\`, or any other method supported by Node's HTTP parser.`,
-      docsUrl: 'https://on.cypress.io/request',
-    },
-    failonstatus_deprecated_warning: {
-      message: `The ${cmd('request')} \`failOnStatus\` option has been renamed to \`failOnStatusCode\`. Please update your code. This option will be removed at a later time.`,
       docsUrl: 'https://on.cypress.io/request',
     },
     form_invalid: {
@@ -1088,6 +1200,10 @@ module.exports = {
   },
 
   route: {
+    deprecated: {
+      message: `${cmd('route')} has been deprecated and will be moved to a plugin in a future release. Consider migrating to using ${cmd('intercept')} instead.`,
+      docsUrl: 'https://on.cypress.io/intercept',
+    },
     failed_prerequisites: {
       message: `${cmd('route')} cannot be invoked before starting the ${cmd('server')}`,
       docsUrl: 'https://on.cypress.io/server',
@@ -1161,6 +1277,10 @@ module.exports = {
     },
     multiple_containers: {
       message: `${cmd('scrollTo')} can only be used to scroll 1 element, you tried to scroll {{num}} elements.\n\n`,
+      docsUrl: 'https://on.cypress.io/scrollto',
+    },
+    invalid_ensureScrollable: {
+      message: `${cmd('scrollTo')} \`ensureScrollable\` option must be a boolean. You passed: \`{{ensureScrollable}}\``,
       docsUrl: 'https://on.cypress.io/scrollto',
     },
   },
@@ -1275,17 +1395,17 @@ module.exports = {
   },
 
   server: {
-    force404_deprecated: 'Passing `cy.server({force404: false})` is now the default behavior of `cy.server()`. You can safely remove this option.',
+    deprecated: {
+      message: `${cmd('server')} has been deprecated and will be moved to a plugin in a future release. Consider migrating to using ${cmd('intercept')} instead.`,
+      docsUrl: 'https://on.cypress.io/intercept',
+    },
     invalid_argument: {
       message: `${cmd('server')} accepts only an object literal as its argument.`,
       docsUrl: 'https://on.cypress.io/server',
     },
-    stub_deprecated: {
-      message: 'Passing `cy.server({stub: false})` is now deprecated. You can safely remove: `{stub: false}`.',
-      docsUrl: 'https://on.cypress.io/deprecated-stub-false-on-{{type}}',
-    },
     xhrurl_not_set: '`Server.options.xhrUrl` has not been set',
     unavailable: 'The XHR server is unavailable or missing. This should never happen and likely is a bug. Open an issue if you see this message.',
+    whitelist_renamed: `The ${cmd('server')} \`whitelist\` option has been renamed to \`ignore\`. Please rename \`whitelist\` to \`ignore\`.`,
   },
 
   setCookie: {
@@ -1316,11 +1436,29 @@ module.exports = {
         docsUrl: 'https://on.cypress.io/setcookie',
       }
     },
+    host_prefix: {
+      message: 'Cookies starting with the `__Host-` prefix must be set with `{ secure: true }`, and the path must be `/`',
+      docsUrl: 'https://on.cypress.io/setcookie',
+    },
+    secure_prefix: {
+      message: 'Cookies starting with the `__Secure-` prefix must be set with `{ secure: true }`',
+      docsUrl: 'https://on.cypress.io/setcookie',
+    },
+  },
+
+  shadow: {
+    no_shadow_root: {
+      message: 'Expected the subject to host a shadow root, but never found it.',
+      docsUrl: 'https://on.cypress.io/shadow',
+    },
   },
 
   should: {
     chainer_not_found: 'The chainer `{{chainer}}` was not found. Could not build assertion.',
-    eventually_deprecated: 'The `eventually` assertion chainer has been deprecated. This is now the default behavior so you can safely remove this word and everything should work as before.',
+    language_chainer: {
+      message: 'The chainer `{{originalChainers}}` is a language chainer provided to improve the readability of your assertions, not an actual assertion. Please provide a valid assertion.',
+      docsUrl: 'https://on.cypress.io/assertions',
+    },
   },
 
   spread: {
@@ -1464,6 +1602,10 @@ module.exports = {
       message: `${cmd('trigger')} can only be called on a single element. Your subject contained {{num}} elements.`,
       docsUrl: 'https://on.cypress.io/trigger',
     },
+    invalid_event_type: {
+      message: `${cmd('trigger')} \`eventConstructor\` option must be a valid event (e.g. 'MouseEvent', 'KeyboardEvent'). You passed: \`{{eventConstructor}}\``,
+      docsUrl: 'https://on.cypress.io/trigger',
+    },
   },
 
   type: {
@@ -1500,6 +1642,10 @@ module.exports = {
     },
     multiple_elements: {
       message: `${cmd('type')} can only be called on a single element. Your subject contained {{num}} elements.`,
+      docsUrl: 'https://on.cypress.io/type',
+    },
+    not_a_modifier: {
+      message: `\`{{key}}\` is not a modifier.`,
       docsUrl: 'https://on.cypress.io/type',
     },
     not_actionable_textlike: {
@@ -1570,6 +1716,10 @@ module.exports = {
         msg += `the remaining tests in the current suite: \`${_.truncate(t, 20)}\``
       } else {
         msg += 'all of the remaining tests.'
+      }
+
+      if ((obj.hookName === 'after all' || obj.hookName === 'before all') && obj.retries > 0) {
+        msg += `\n\nAlthough you have test retries enabled, we do not retry tests when \`before all\` or \`after all\` hooks fail`
       }
 
       return msg
@@ -1764,10 +1914,6 @@ module.exports = {
       message: '`{{prop}}` is not a valid alias property. Are you trying to ask for the first request? If so write `@{{str}}.request`',
       docsUrl: 'https://on.cypress.io/wait',
     },
-    fn_deprecated: {
-      message: `${cmd('wait', 'fn')} has been deprecated. Change this command to be ${cmd('should', 'fn')}.`,
-      docsUrl: 'https://on.cypress.io/wait',
-    },
     invalid_1st_arg: {
       message: `${cmd('wait')} only accepts a number, an alias of a route, or an array of aliases of routes. You passed: \`{{arg}}\``,
       docsUrl: 'https://on.cypress.io/wait',
@@ -1802,9 +1948,9 @@ module.exports = {
     timed_out: {
       message: stripIndent`
       ${cmd('wrap')} timed out waiting \`{{timeout}}ms\` to complete.
-      
+
       You called \`cy.wrap()\` with a promise that never resolved.
-      
+
       To increase the timeout, use \`{ timeout: number }\`
       `,
       docsUrl: 'https://on.cypress.io/wrap',
@@ -1815,7 +1961,5 @@ module.exports = {
     aborted: 'This XHR was aborted by your code -- check this stack trace below.',
     missing: '`XMLHttpRequest#xhr` is missing.',
     network_error: 'The network request for this XHR could not be made. Check your console for the reason.',
-    requestjson_deprecated: '`requestJSON` is now deprecated and will be removed in the next version. Update this to `requestBody` or `request.body`.',
-    responsejson_deprecated: '`responseJSON` is now deprecated and will be removed in the next version. Update this to `responseBody` or `response.body`.',
   },
 }

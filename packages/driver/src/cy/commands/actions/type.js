@@ -29,6 +29,7 @@ module.exports = function (Commands, Cypress, cy, state, config) {
       parseSpecialCharSequences: true,
       waitForAnimations: config('waitForAnimations'),
       animationDistanceThreshold: config('animationDistanceThreshold'),
+      scrollBehavior: config('scrollBehavior'),
     })
 
     if (options.log) {
@@ -202,19 +203,25 @@ module.exports = function (Commands, Cypress, cy, state, config) {
           return
         }
 
-        // issue the click event to the 'default button' of the form
-        // we need this to be synchronous so not going through our
-        // own click command
-        // as of now, at least in Chrome, causing the click event
-        // on the button will indeed trigger the form submit event
-        // so we dont need to fire it manually anymore!
-        if (!clickedDefaultButton(defaultButton)) {
-          // if we werent able to click the default button
-          // then synchronously fire the submit event
-          // currently this is sync but if we use a waterfall
-          // promise in the submit command it will break again
-          // consider changing type to a Promise and juggle logging
-          return cy.now('submit', form, { log: false, $el: form })
+        // In Firefox, submit event is automatically fired
+        // when we send {Enter} KeyboardEvent to the input fields.
+        // Because of that, we don't have to click the submit buttons.
+        // Otherwise, we trigger submit events twice.
+        if (!Cypress.isBrowser('firefox')) {
+          // issue the click event to the 'default button' of the form
+          // we need this to be synchronous so not going through our
+          // own click command
+          // as of now, at least in Chrome, causing the click event
+          // on the button will indeed trigger the form submit event
+          // so we dont need to fire it manually anymore!
+          if (!clickedDefaultButton(defaultButton)) {
+            // if we werent able to click the default button
+            // then synchronously fire the submit event
+            // currently this is sync but if we use a waterfall
+            // promise in the submit command it will break again
+            // consider changing type to a Promise and juggle logging
+            return cy.now('submit', form, { log: false, $el: form })
+          }
         }
       }
 
@@ -465,6 +472,9 @@ module.exports = function (Commands, Cypress, cy, state, config) {
     options = _.defaults({}, userOptions, {
       log: true,
       force: false,
+      waitForAnimations: config('waitForAnimations'),
+      animationDistanceThreshold: config('animationDistanceThreshold'),
+      scrollBehavior: config('scrollBehavior'),
     })
 
     // blow up if any member of the subject
@@ -490,9 +500,29 @@ module.exports = function (Commands, Cypress, cy, state, config) {
         })
       }
 
-      const node = $dom.stringify($el)
+      const callTypeCmd = ($el) => {
+        return cy.now('type', $el, '{selectall}{del}', {
+          $el,
+          log: false,
+          verify: false, // handle verification ourselves
+          _log: options._log,
+          force: options.force,
+          timeout: options.timeout,
+          interval: options.interval,
+          waitForAnimations: options.waitForAnimations,
+          animationDistanceThreshold: options.animationDistanceThreshold,
+          scrollBehavior: options.scrollBehavior,
+        }).then(() => {
+          if (options._log) {
+            options._log.snapshot().end()
+          }
 
-      if (!$dom.isTextLike($el.get(0))) {
+          return null
+        })
+      }
+
+      const throwError = ($el) => {
+        const node = $dom.stringify($el)
         const word = $utils.plural(subject, 'contains', 'is')
 
         $errUtils.throwErrByPath('clear.invalid_element', {
@@ -501,21 +531,34 @@ module.exports = function (Commands, Cypress, cy, state, config) {
         })
       }
 
-      return cy.now('type', $el, '{selectall}{del}', {
-        $el,
-        log: false,
-        verify: false, // handle verification ourselves
-        _log: options._log,
-        force: options.force,
-        timeout: options.timeout,
-        interval: options.interval,
-      }).then(() => {
-        if (options._log) {
-          options._log.snapshot().end()
+      if (!$dom.isTextLike($el.get(0))) {
+        options.ensure = {
+          position: true,
+          visibility: true,
+          notDisabled: true,
+          notAnimating: true,
+          notCovered: true,
+          notReadonly: true,
         }
 
-        return null
-      })
+        return $actionability.verify(cy, $el, options, {
+          onScroll ($el, type) {
+            return Cypress.action('cy:scrolled', $el, type)
+          },
+
+          onReady ($elToClick) {
+            let activeElement = $elements.getActiveElByDocument($elToClick)
+
+            if (!options.force && activeElement === null || !$dom.isTextLike($elToClick.get(0))) {
+              throwError($el)
+            }
+
+            return callTypeCmd($elToClick)
+          },
+        })
+      }
+
+      return callTypeCmd($el)
     }
 
     return Promise

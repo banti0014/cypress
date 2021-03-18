@@ -2,6 +2,7 @@ const _ = require('lodash')
 const capitalize = require('underscore.string/capitalize')
 const methods = require('methods')
 const moment = require('moment')
+const $ = require('jquery')
 
 const $jquery = require('../dom/jquery')
 const $Location = require('./location')
@@ -18,6 +19,7 @@ const defaultOptions = {
   multiple: false,
   waitForAnimations: true,
   animationDistanceThreshold: 5,
+  scrollBehavior: 'top',
 }
 
 const USER_FRIENDLY_TYPE_DETECTORS = _.map([
@@ -55,6 +57,18 @@ module.exports = {
     return console.log(...msgs)
   },
 
+  monkeypatchBefore (origFn, fn) {
+    return function () {
+      const newArgs = fn.apply(this, arguments)
+
+      if (newArgs !== undefined) {
+        return origFn.apply(this, newArgs)
+      }
+
+      return origFn.apply(this, arguments)
+    }
+  },
+
   unwrapFirst (val) {
     // this method returns the first item in an array
     // and if its still a jquery object, then we return
@@ -89,7 +103,7 @@ module.exports = {
 
     return _.reduce(props, (memo, prop) => {
       if (_.has(obj, prop) || obj[prop] !== undefined) {
-        memo[prop] = obj[prop]
+        memo[prop] = _.result(obj, prop)
       }
 
       return memo
@@ -169,6 +183,11 @@ module.exports = {
     }
 
     if (_.isObject(value)) {
+      // Cannot use $dom.isJquery here because it causes infinite recursion.
+      if (value instanceof $) {
+        return `jQuery{${value.length}}`
+      }
+
       const len = _.keys(value).length
 
       if (len > 2) {
@@ -295,6 +314,10 @@ module.exports = {
     const deltaY = point1.y - point2.y
 
     return Math.sqrt((deltaX * deltaX) + (deltaY * deltaY))
+  },
+
+  getTestFromRunnable (r) {
+    return r.ctx.currentTest || r
   },
 
   memoize (func, cacheInstance = new Map()) {

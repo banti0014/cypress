@@ -103,8 +103,8 @@ describe('src/cypress/runner', () => {
       runIsolatedCypress({})
       .then(shouldHaveTestResults(0, 0))
 
-      cy.contains('No tests found in your file').should('be.visible')
-      cy.get('.error-message p').invoke('text').should('eq', 'We could not detect any tests in the above file. Write some tests and re-run.')
+      cy.contains('No tests found.').should('be.visible')
+      cy.contains('p', 'Cypress could not detect tests in this file.').should('be.visible')
     })
 
     it('ends test before nested suite', () => {
@@ -147,6 +147,31 @@ describe('src/cypress/runner', () => {
 
     describe('hook failures', () => {
       describe('test failures w/ hooks', () => {
+        it('test [only]', () => {
+          runIsolatedCypress({
+            suites: {
+              'suite 1': {
+                hooks: ['before', 'beforeEach', 'afterEach', 'after'],
+                tests: [
+                  { name: 'test 1' },
+                  { name: 'test 2', only: true },
+                  { name: 'test 3' },
+                ],
+              },
+            },
+          }).then(shouldHaveTestResults(1, 0))
+        })
+
+        it('test [pending]', () => {
+          runIsolatedCypress(() => {
+            before(() => {})
+            it('t1')
+            it('t2')
+            it('t3')
+            after(() => {})
+          }).then(shouldHaveTestResults(0, 0, 3))
+        })
+
         it('fail with [before]', () => {
           runIsolatedCypress({
             suites: {
@@ -262,6 +287,122 @@ describe('src/cypress/runner', () => {
         },
       })
       .then(shouldHaveTestResults(0, 1))
+    })
+
+    it('scrolls each command into view', () => {
+      // HACK to assert on the dom DURING the runIsolatedCypress run
+      // we expect the last command item to be scrolled into view before
+      // the test ends
+      const result = cy.now('get', '.command-number:contains(25):visible').catch((e) => cy.state('reject')(e))
+
+      runIsolatedCypress(() => {
+        describe('s1', () => {
+          // Passing in done forces the spec to timeout
+          // eslint-disable-next-line
+          it('t1', (done) => {
+            cy.timeout(10)
+            Cypress._.times(25, () => expect(true).ok)
+          })
+        })
+      })
+
+      cy.wrap(result)
+    })
+
+    it('file with empty suites only displays no tests found', () => {
+      runIsolatedCypress({
+        suites: {
+          'suite 1': {
+            suites: {
+              'suite 2': {},
+            },
+          },
+        },
+      }).then(() => {
+        cy.get('.reporter').contains('No tests found')
+      })
+    })
+  })
+
+  describe('runner header', () => {
+    context('viewport dropdown', () => {
+      it('shows on click', () => {
+        runIsolatedCypress({})
+        cy.get('.viewport-menu').should('not.be.visible')
+        cy.get('.viewport-info button').click()
+        cy.get('.viewport-menu').should('be.visible')
+
+        cy.percySnapshot()
+      })
+    })
+
+    context('selector playground', () => {
+      it('shows on click', () => {
+        runIsolatedCypress({})
+
+        cy.get('.selector-playground').should('not.be.visible')
+        cy.get('.selector-playground-toggle').click()
+        cy.get('.selector-playground').should('be.visible')
+
+        cy.percySnapshot()
+      })
+
+      it('closes on restart', () => {
+        runIsolatedCypress({})
+
+        cy.get('.selector-playground-toggle').click()
+        cy.get('.selector-playground').should('be.visible')
+
+        cy.get('.restart').click()
+        cy.get('.selector-playground').should('not.be.visible')
+      })
+    })
+  })
+
+  describe('reporter interaction', () => {
+    // https://github.com/cypress-io/cypress/issues/8621
+    it('user can stop test execution', (done) => {
+      runIsolatedCypress(() => {
+        // eslint-disable-next-line mocha/handle-done-callback
+        it('test stops while running', (done) => {
+          cy.timeout(200)
+          cy.get('.not-exist')
+          setTimeout(() => {
+            cy.$$('button.stop', parent.document).click()
+          }, 100)
+        })
+
+        afterEach(function () {
+          this.currentTest.err = new Error('ran aftereach')
+        })
+      }, {
+        onBeforeRun ({ autCypress }) {
+          autCypress.on('test:after:run', (arg) => {
+            expect(arg.err.message).not.contain('aftereach')
+            done()
+          })
+        },
+      })
+    })
+
+    it('supports disabling command log reporter with env var NO_COMMAND_LOG', () => {
+      runIsolatedCypress(() => {
+        it('foo', () => {
+          // simulate a page load, ensures reporter state event is properly stubbed
+          cy.then(() => Cypress.action('cy:collect:run:state'))
+          cy.visit('/')
+
+          // ensures runner doesn't wait for nonexist before:screenshot ack
+          cy.screenshot({
+            capture: 'runner',
+          })
+        })
+      },
+      {
+        config: { env: { NO_COMMAND_LOG: '1' } },
+      })
+
+      cy.get('.reporter').should('not.exist')
     })
   })
 })

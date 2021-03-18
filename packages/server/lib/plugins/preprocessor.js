@@ -7,12 +7,9 @@ const debug = require('debug')('cypress:server:preprocessor')
 const Promise = require('bluebird')
 const appData = require('../util/app_data')
 const plugins = require('../plugins')
-const resolve = require('./resolve')
 
 const errorMessage = function (err = {}) {
-  return (err.stack || err.annotated || err.message || err.toString())
-  .replace(/\n\s*at.*/g, '')
-  .replace(/From previous event:\n?/g, '')
+  return err.stack || err.annotated || err.message || err.toString()
 }
 
 const clientSideError = function (err) {
@@ -35,25 +32,6 @@ const baseEmitter = new EE()
 let fileObjects = {}
 let fileProcessors = {}
 
-const createBrowserifyPreprocessor = function (options) {
-  debug('creating browserify preprocessor with options %o', options)
-  const browserify = require('@cypress/browserify-preprocessor')
-
-  return browserify(options)
-}
-
-const setDefaultPreprocessor = function (config) {
-  debug('set default preprocessor')
-
-  const tsPath = resolve.typescript(config)
-
-  const options = {
-    typescript: tsPath,
-  }
-
-  return plugins.register('file:preprocessor', API.createBrowserifyPreprocessor(options))
-}
-
 plugins.registerHandler((ipc) => {
   ipc.on('preprocessor:rerun', (filePath) => {
     debug('ipc preprocessor:rerun event')
@@ -73,10 +51,6 @@ const API = {
   errorMessage,
 
   clientSideError,
-
-  setDefaultPreprocessor,
-
-  createBrowserifyPreprocessor,
 
   emitter: baseEmitter,
 
@@ -116,10 +90,6 @@ const API = {
 
         return fileObject.emit('close')
       })
-    }
-
-    if (!plugins.has('file:preprocessor')) {
-      setDefaultPreprocessor(config)
     }
 
     if (config.isTextTerminal && (fileProcessor = fileProcessors[filePath])) {

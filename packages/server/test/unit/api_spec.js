@@ -12,6 +12,7 @@ const machineId = require(`${root}lib/util/machine_id`)
 const Promise = require('bluebird')
 
 const API_BASEURL = 'http://localhost:1234'
+const ON_BASEURL = 'http://localhost:8080'
 const DASHBOARD_BASEURL = 'http://localhost:3000'
 const AUTH_URLS = {
   'dashboardAuthUrl': 'http://localhost:3000/test-runner.html',
@@ -343,6 +344,10 @@ describe('lib/api', () => {
           remoteOrigin: 'https://github.com/foo/bar.git',
         },
         specs: ['foo.js', 'bar.js'],
+        runnerCapabilities: {
+          'dynamicSpecsInSerialMode': true,
+          'skipSpecAction': true,
+        },
       }
     })
 
@@ -558,38 +563,36 @@ describe('lib/api', () => {
         error: 'err msg',
         video: true,
         screenshots: [],
-        cypressConfig: {},
         reporterStats: {},
-        stdout: null,
       }
 
-      this.putProps = _.omit(this.updateProps, 'instanceId')
+      this.postProps = _.pick(this.updateProps, 'stats', 'video', 'screenshots', 'reporterStats')
     })
 
-    it('PUTs /instances/:id', function () {
+    it('POSTs /instances/:id/results', function () {
       nock(API_BASEURL)
-      .matchHeader('x-route-version', '2')
+      .matchHeader('x-route-version', '1')
       .matchHeader('x-os-name', 'linux')
       .matchHeader('x-cypress-version', pkg.version)
-      .put('/instances/instance-id-123', this.putProps)
+      .post('/instances/instance-id-123/results', this.postProps)
       .reply(200)
 
-      return api.updateInstance(this.updateProps)
+      return api.postInstanceResults(this.updateProps)
     })
 
     it('PUT /instances/:id failure formatting', () => {
       nock(API_BASEURL)
-      .matchHeader('x-route-version', '2')
+      .matchHeader('x-route-version', '1')
       .matchHeader('x-os-name', 'linux')
       .matchHeader('x-cypress-version', pkg.version)
-      .put('/instances/instance-id-123')
+      .post('/instances/instance-id-123/results')
       .reply(422, {
         errors: {
           tests: ['is required'],
         },
       })
 
-      return api.updateInstance({ instanceId: 'instance-id-123' })
+      return api.postInstanceResults({ instanceId: 'instance-id-123' })
       .then(() => {
         throw new Error('should have thrown here')
       }).catch((err) => {
@@ -609,14 +612,14 @@ describe('lib/api', () => {
 
     it('handles timeouts', () => {
       nock(API_BASEURL)
-      .matchHeader('x-route-version', '2')
+      .matchHeader('x-route-version', '1')
       .matchHeader('x-os-name', 'linux')
       .matchHeader('x-cypress-version', pkg.version)
-      .put('/instances/instance-id-123')
+      .post('/instances/instance-id-123/results')
       .socketDelay(5000)
       .reply(200, {})
 
-      return api.updateInstance({
+      return api.postInstanceResults({
         instanceId: 'instance-id-123',
         timeout: 100,
       })
@@ -628,23 +631,23 @@ describe('lib/api', () => {
     })
 
     it('sets timeout to 60 seconds', () => {
-      sinon.stub(api.rp, 'put').resolves()
+      sinon.stub(api.rp, 'post').resolves()
 
-      return api.updateInstance({})
+      return api.postInstanceResults({})
       .then(() => {
-        expect(api.rp.put).to.be.calledWithMatch({ timeout: 60000 })
+        expect(api.rp.post).to.be.calledWithMatch({ timeout: 60000 })
       })
     })
 
     it('tags errors', function () {
       nock(API_BASEURL)
-      .matchHeader('x-route-version', '2')
+      .matchHeader('x-route-version', '1')
       .matchHeader('authorization', 'Bearer auth-token-123')
       .matchHeader('accept-encoding', /gzip/)
-      .put('/instances/instance-id-123', this.putProps)
+      .post('/instances/instance-id-123/results', this.postProps)
       .reply(500, {})
 
-      return api.updateInstance(this.updateProps)
+      return api.postInstanceResults(this.updateProps)
       .then(() => {
         throw new Error('should have thrown here')
       }).catch((err) => {
@@ -1138,6 +1141,32 @@ describe('lib/api', () => {
         throw new Error('should have thrown here')
       }).catch((err) => {
         expect(err.isApiError).to.be.true
+      })
+    })
+  })
+
+  context('.getReleaseNotes', () => {
+    it('GET /release-notes/:version + returns result', () => {
+      const releaseNotes = { title: 'New in 1.2.3!' }
+
+      nock(ON_BASEURL)
+      .get('/release-notes/1.2.3')
+      .reply(200, releaseNotes)
+
+      return api.getReleaseNotes('1.2.3')
+      .then((ret) => {
+        expect(ret).to.deep.eq(releaseNotes)
+      })
+    })
+
+    it('ignores errors + returns empty object', () => {
+      nock(ON_BASEURL)
+      .get('/release-notes/1.2.3')
+      .reply(500, {})
+
+      return api.getReleaseNotes('1.2.3')
+      .then((result) => {
+        expect(result).to.deep.eq({})
       })
     })
   })

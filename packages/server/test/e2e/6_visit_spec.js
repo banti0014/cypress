@@ -82,7 +82,7 @@ const onServer = function (app) {
   })
 
   // https://github.com/cypress-io/cypress/issues/5602
-  return app.get('/invalid-header-char', (req, res) => {
+  app.get('/invalid-header-char', (req, res) => {
     // express/node may interfere if we just use res.setHeader
     res.connection.write(
       `\
@@ -95,6 +95,23 @@ foo\
     )
 
     return res.connection.end()
+  })
+
+  app.post('/redirect-post', (req, res) => {
+    const code = Number(req.query.code)
+
+    if (!code) {
+      return res.end('no code supplied')
+    }
+
+    // 307 keeps the same HTTP method
+    const url = code === 307 ? '/post-only' : '/timeout'
+
+    res.redirect(code, url)
+  })
+
+  app.post('/post-only', (req, res) => {
+    res.end('<html>it posted</html>')
   })
 }
 
@@ -113,7 +130,7 @@ describe('e2e visit', () => {
     })
 
     e2e.it('passes', {
-      spec: 'visit_spec.coffee',
+      spec: 'visit_spec.js',
       snapshot: true,
       onRun (exec) {
         return startTlsV1Server(6776)
@@ -144,32 +161,32 @@ describe('e2e visit', () => {
     })
 
     e2e.it('fails when network connection immediately fails', {
-      spec: 'visit_http_network_error_failing_spec.coffee',
+      spec: 'visit_http_network_error_failing_spec.js',
       snapshot: true,
       expectedExitCode: 1,
     })
 
     e2e.it('fails when server responds with 500', {
-      spec: 'visit_http_500_response_failing_spec.coffee',
+      spec: 'visit_http_500_response_failing_spec.js',
       snapshot: true,
       expectedExitCode: 1,
     })
 
     e2e.it('fails when file server responds with 404', {
-      spec: 'visit_file_404_response_failing_spec.coffee',
+      spec: 'visit_file_404_response_failing_spec.js',
       snapshot: true,
       expectedExitCode: 1,
     })
 
     e2e.it('fails when content type isnt html', {
-      spec: 'visit_non_html_content_type_failing_spec.coffee',
+      spec: 'visit_non_html_content_type_failing_spec.js',
       snapshot: true,
       expectedExitCode: 1,
     })
 
     e2e.it('calls onBeforeLoad when overwriting cy.visit', {
       snapshot: true,
-      spec: 'issue_2196_spec.coffee',
+      spec: 'issue_2196_spec.js',
     })
   })
 
@@ -205,7 +222,7 @@ describe('e2e visit', () => {
     })
 
     e2e.it('fails when visit times out', {
-      spec: 'visit_http_timeout_failing_spec.coffee',
+      spec: 'visit_http_timeout_failing_spec.js',
       snapshot: true,
       expectedExitCode: 2,
     })

@@ -15,7 +15,7 @@ const runnerStub = () => {
   } as EventEmitterStub
 }
 
-describe('controls', function () {
+describe('shortcuts', function () {
   let runner: EventEmitterStub
 
   beforeEach(function () {
@@ -23,7 +23,7 @@ describe('controls', function () {
 
     cy.fixture('runnables').as('runnables')
 
-    cy.visit('/dist').then((win) => {
+    cy.visit('/').then((win) => {
       win.render({
         runner,
         spec: {
@@ -90,7 +90,7 @@ describe('controls', function () {
         // need to add an input since this environment is isolated
         $body.append('<input id="temp-input" />')
       })
-      .get('#temp-input').type('r')
+      .get('#temp-input').type('r', { force: true })
       .then(() => {
         expect(runner.emit).not.to.have.been.calledWith('runner:restart')
       })

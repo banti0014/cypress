@@ -33,11 +33,6 @@ const $TestConfigOverrides = require('../cy/testConfigOverrides')
 
 const { registerFetch } = require('unfetch')
 
-const privateProps = {
-  props: { name: 'state', url: true },
-  privates: { name: 'state', url: false },
-}
-
 const noArgsAreAFunction = (args) => {
   return !_.some(args, _.isFunction)
 }
@@ -150,7 +145,7 @@ const create = function (specWindow, Cypress, Cookies, state, config, log) {
   const jquery = $jQuery.create(state)
   const location = $Location.create(state)
   const focused = $Focused.create(state)
-  const keyboard = $Keyboard.create(state)
+  const keyboard = $Keyboard.create(Cypress, state)
   const mouse = $Mouse.create(state, keyboard, focused, Cypress)
   const timers = $Timers.create()
 
@@ -656,7 +651,7 @@ const create = function (specWindow, Cypress, Cookies, state, config, log) {
 
     args.unshift(subject)
 
-    Cypress.action('cy:next:subject:prepared', subject, args)
+    Cypress.action('cy:next:subject:prepared', subject, args, firstCall)
 
     return args
   }
@@ -713,7 +708,8 @@ const create = function (specWindow, Cypress, Cookies, state, config, log) {
     // attached to the error thrown from chai
     // command errors and command assertion errors (default assertion or cy.should)
     // have the invocation stack attached to the current command
-    let userInvocationStack = state('currentAssertionUserInvocationStack')
+    // prefer err.userInvocation stack if it's been set
+    let userInvocationStack = $errUtils.getUserInvocationStack(err) || state('currentAssertionUserInvocationStack')
 
     // if there is no user invocation stack from an assertion or it is the default
     // assertion, meaning it came from a command (e.g. cy.get), prefer the
@@ -744,6 +740,10 @@ const create = function (specWindow, Cypress, Cookies, state, config, log) {
     let rets
 
     stopped = true
+
+    if (typeof err === 'string') {
+      err = new Error(err)
+    }
 
     err.stack = $stackUtils.normalizedStack(err)
 
@@ -1044,9 +1044,7 @@ const create = function (specWindow, Cypress, Cookies, state, config, log) {
       }
 
       cy[name] = function (...args) {
-        const userInvocationStack = $stackUtils.normalizedUserInvocationStack(
-          (new specWindow.Error('command invocation stack')).stack,
-        )
+        const userInvocationStack = $stackUtils.captureUserInvocationStack(specWindow.Error)
 
         let ret
 
@@ -1101,8 +1099,9 @@ const create = function (specWindow, Cypress, Cookies, state, config, log) {
         // dont enqueue / inject any new commands if
         // onInjectCommand returns false
         const onInjectCommand = state('onInjectCommand')
+        const injected = _.isFunction(onInjectCommand)
 
-        if (_.isFunction(onInjectCommand)) {
+        if (injected) {
           if (onInjectCommand.call(cy, name, ...args) === false) {
             return
           }
@@ -1114,6 +1113,7 @@ const create = function (specWindow, Cypress, Cookies, state, config, log) {
           type,
           chainerId,
           userInvocationStack,
+          injected,
           fn: wrap(firstCall),
         })
 
@@ -1282,6 +1282,8 @@ const create = function (specWindow, Cypress, Cookies, state, config, log) {
 
       state('runnable', runnable)
 
+      state('test', $utils.getTestFromRunnable(runnable))
+
       state('ctx', runnable.ctx)
 
       const { fn } = runnable
@@ -1404,16 +1406,6 @@ const create = function (specWindow, Cypress, Cookies, state, config, log) {
         }
       }
     },
-  })
-
-  _.each(privateProps, (obj, key) => {
-    return Object.defineProperty(cy, key, {
-      get () {
-        return $errUtils.throwErrByPath('miscellaneous.private_property', {
-          args: obj,
-        })
-      },
-    })
   })
 
   setTopOnError(cy)

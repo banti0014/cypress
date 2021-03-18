@@ -35,7 +35,7 @@ cy.visit('https://www.acme.com/', {
 
 const serverOptions: Partial<Cypress.ServerOptions> = {
   delay: 100,
-  whitelist: () => true
+  ignore: () => true
 }
 
 cy.server(serverOptions)
@@ -62,6 +62,7 @@ expect(stub).to.not.have.been.called
 stub()
 expect(stub).to.have.been.calledOnce
 cy.wrap(stub).should('have.been.calledOnce')
+cy.wrap(stub).should('be.calledOnce')
 
 namespace EventInterfaceTests {
   // window:confirm stubbing
@@ -83,6 +84,10 @@ cy.request({
   url: "http://localhost:3000/myressource",
   method: "POST",
   body: {}
+}).then((resp) => {
+  resp // $ExpectType Response
+  resp.redirectedToUrl // $ExpectType string | undefined
+  resp.redirects // $ExpectTyep string[] | undefined
 })
 
 // specify query parameters
@@ -142,3 +147,9 @@ namespace BlobTests {
       dateUrl // $ExpectType string
   })
 }
+
+cy.window().then(window => {
+  window // $ExpectType AUTWindow
+
+  window.eval('1')
+})

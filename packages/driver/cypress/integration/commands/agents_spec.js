@@ -352,11 +352,11 @@ describe('src/cy/commands/agents', () => {
             }).to.throw('`cy.as()` cannot be passed an empty string.')
           })
 
-          _.each(['test', 'runnable', 'timeout', 'slow', 'skip', 'inspect'], (blacklist) => {
-            it(`throws on a blacklisted word: ${blacklist}`, () => {
+          _.each(['test', 'runnable', 'timeout', 'slow', 'skip', 'inspect'], (reserved) => {
+            it(`throws on a reserved word: ${reserved}`, () => {
               expect(() => {
-                cy.stub().as(blacklist)
-              }).to.throw(`\`cy.as()\` cannot be aliased as: \`${blacklist}\`. This word is reserved.`)
+                cy.stub().as(reserved)
+              }).to.throw(`\`cy.as()\` cannot be aliased as: \`${reserved}\`. This word is reserved.`)
             })
           })
         })
@@ -433,11 +433,11 @@ describe('src/cy/commands/agents', () => {
             }).to.throw('`cy.as()` cannot be passed an empty string.')
           })
 
-          _.each(['test', 'runnable', 'timeout', 'slow', 'skip', 'inspect'], (blacklist) => {
-            it(`throws on a blacklisted word: ${blacklist}`, () => {
+          _.each(['test', 'runnable', 'timeout', 'slow', 'skip', 'inspect'], (reserved) => {
+            it(`throws on a reserved word: ${reserved}`, () => {
               expect(() => {
-                cy.stub().as(blacklist)
-              }).to.throw(`\`cy.as()\` cannot be aliased as: \`${blacklist}\`. This word is reserved.`)
+                cy.stub().as(reserved)
+              }).to.throw(`\`cy.as()\` cannot be aliased as: \`${reserved}\`. This word is reserved.`)
             })
           })
         })
@@ -703,24 +703,6 @@ describe('src/cy/commands/agents', () => {
           expect(this.consoleProps['Spied Obj']).to.be.eq(this.obj)
         })
       })
-    })
-  })
-
-  context('.agents', () => {
-    beforeEach(function () {
-      cy.spy(top.console, 'warn')
-      this.agents = cy.agents()
-    })
-
-    it('logs deprecation warning', () => {
-      expect(top.console.warn).to.be.calledWith('Cypress Warning: `cy.agents()` is deprecated. Use `cy.stub()` and `cy.spy()` instead.')
-    })
-
-    it('synchronously returns #spy and #stub methods', function () {
-      expect(this.agents.spy).to.be.a('function')
-      expect(this.agents.spy().callCount).to.be.a('number')
-      expect(this.agents.stub).to.be.a('function')
-      expect(this.agents.stub().returns).to.be.a('function')
     })
   })
 })

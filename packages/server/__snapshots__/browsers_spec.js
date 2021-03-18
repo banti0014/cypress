@@ -8,7 +8,7 @@ Cypress supports the following browsers:
 - chromium
 - edge
 - electron
-- firefox (Cypress support in beta)
+- firefox
 
 You can also use a custom browser: https://on.cypress.io/customize-browsers
 
@@ -28,7 +28,7 @@ Cypress supports the following browsers:
 - chromium
 - edge
 - electron
-- firefox (Cypress support in beta)
+- firefox
 
 You can also use a custom browser: https://on.cypress.io/customize-browsers
 
@@ -37,7 +37,7 @@ Available browsers found on your system are:
 - chrome:canary
 - firefox
 
-Note: In Cypress 4.0, Canary must be launched as \`chrome:canary\`, not \`canary\`.
+Note: In Cypress version 4.0.0, Canary must be launched as \`chrome:canary\`, not \`canary\`.
 
-See https://on.cypress.io/migration-guide for more information on breaking changes in 4.0.
+See https://on.cypress.io/migration-guide for more information on breaking changes in 4.0.0.
 `
